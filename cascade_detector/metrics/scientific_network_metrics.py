@@ -201,7 +201,7 @@ class ScientificNetworkMetrics(NetworkMetrics):
             n_workers=default_config['n_workers'],
             use_approximate=False,  # NEVER approximate
             hybrid_mode=True,
-            use_networkit=False,  # Avoid potential issues
+            use_networkit=True,  # Enable for exact fast computation
             gpu_batch_size=50000,
             enable_gpu_cache=default_config['cache_enabled'],
             show_progress=False  # Disable progress bars for internal computations
@@ -1399,8 +1399,20 @@ class ScientificNetworkMetrics(NetworkMetrics):
                 # Check for temporal proximity and frame similarity
                 if 'date' in a1 and 'date' in a2:
                     # Simple frame overlap check
-                    f1 = set(a1.get('frames', {}).keys())
-                    f2 = set(a2.get('frames', {}).keys())
+                    # Handle both list and dict formats for frames
+                    frames1 = a1.get('frames', [])
+                    frames2 = a2.get('frames', [])
+                    
+                    # Convert to sets - handle both list and dict formats
+                    if isinstance(frames1, dict):
+                        f1 = set(frames1.keys())
+                    else:
+                        f1 = set(frames1) if frames1 else set()
+                    
+                    if isinstance(frames2, dict):
+                        f2 = set(frames2.keys())
+                    else:
+                        f2 = set(frames2) if frames2 else set()
                     if f1 & f2:
                         similarity = len(f1 & f2) / max(len(f1 | f2), 1)
                         if similarity > 0.4:

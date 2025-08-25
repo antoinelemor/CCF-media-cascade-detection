@@ -10,12 +10,6 @@ This repository implements the cascade detection component of the [Canadian Clim
 
 The cascade detector processes sentence-level annotations from the CCF pipeline, which extracts over 60 categories of information including frames, messengers, entities, and emotional tones. The framework employs exact computation methods to provide empirical evidence for multi-frame paradigm shifts in climate change media coverage.
 
-Key features:
-- **Exact network analysis**: full computation of all network metrics without sampling
-- **Parallel processing**: optimized for Apple M4 Max architecture with 16 performance cores
-- **Multi-layer detection**: simultaneous analysis across temporal, network, content, and social dimensions
-- **Statistical validation**: multiple significance tests per cascade event
-
 ## Research objectives and innovation
 
 ### Core research question
@@ -66,7 +60,7 @@ flowchart TD
 
 **Potential cascade discovery example**: 
 The framework could detect cascades such as those following the passing of the Greenhouse Gas Pollution Pricing Act in Summer 2018:
-- **Trigger**: legislative milestone initiates widespread coverage
+- **Trigger**: legislative action initiates widespread coverage
 - **Initial response**: national outlets publish within hours of the announcement
 - **Propagation**: regional outlets follow with localized angles within 24-48 hours
 - **Peak**: high phrase similarity across outlets may indicate coordinated messaging or press release influence
@@ -78,7 +72,7 @@ The framework could detect cascades such as those following the passing of the G
 
 #### 1. Exhaustive signal detection: capturing cascade emergence
 
-Traditional approaches miss weak cascade signals by using arbitrary thresholds or sampling. Our framework captures ALL potential cascade indicators through:
+Our framework tries to capture *all* potential cascade indicators through:
 
 **Signal aggregation (63+ features per time window)**
 - **Temporal signatures**: detects acceleration patterns that distinguish organic growth from cascade behavior. For example, a sudden 300% increase in "economic frame" articles over 3 days following a carbon tax announcement

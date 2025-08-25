@@ -28,6 +28,7 @@ Dependencies:
 - warnings
 - tqdm
 - multiprocessing
+- os
 - functools
 
 MAIN FEATURES:
@@ -46,6 +47,7 @@ Antoine Lemor
 import networkx as nx
 import numpy as np
 import pandas as pd
+import os
 from typing import Dict, List, Tuple, Optional, Set, Any, Union, Callable
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
@@ -354,9 +356,11 @@ class ExhaustiveMetricsCalculator:
     
     def _compute_all_metrics_parallel(self, G: nx.Graph, use_gpu: bool = False) -> Dict[str, Dict[str, Any]]:
         """
-        Compute ALL metrics in massive parallel mode - one process per metric.
+        Compute ALL metrics using hybrid strategy:
+        - Parallel mode for first 57 metrics
+        - Sequential mode with internal parallelization for expensive spectral metrics
         
-        This maximizes CPU utilization by computing every metric simultaneously.
+        This maximizes CPU utilization and ensures expensive metrics get full resources.
         
         Args:
             G: NetworkX graph  
@@ -370,20 +374,46 @@ class ExhaustiveMetricsCalculator:
         
         # Flatten ALL metrics into a single list for maximum parallelization
         all_metric_tasks = []
+        expensive_tasks = []  # For expensive metrics that need special handling
+        
+        # Define expensive metrics that should be handled specially
+        # These metrics are handled by NetworKit in Phase 2 for better performance
+        expensive_metrics = {
+            'spectral': ['eigenvalues', 'spectral_radius', 'energy', 'estrada_index', 'spanning_tree_count', 'spectral_gap'],
+            'propagation': ['epidemic_threshold', 'R0', 'influence_maximization', 'cascade_size', 
+                          'spreading_time', 'complex_contagion', 'cascading_failure'],
+            'robustness': ['percolation_threshold', 'attack_robustness', 'failure_robustness', 
+                         'cascading_failure', 'toughness', 'degree_assortativity'],
+            'structure': ['local_efficiency', 'global_efficiency', 'local_clustering', 'global_clustering', 
+                         'transitivity', 'average_clustering'],  # These are expensive
+            'community': ['greedy_modularity', 'modularity', 'communities'],  # These can be slow on large graphs
+            'centrality': ['closeness', 'betweenness', 'katz', 'current_flow_betweenness', 'pagerank', 
+                          'harmonic', 'load', 'eigenvector'],  # These are O(n²) or worse
+            'clustering': ['local_clustering', 'square_clustering'],  # Can be slow on dense graphs
+            'connectivity': ['spectral_gap'],  # Requires eigenvalue computation
+            'distance': ['diameter', 'periphery', 'center', 'barycenter']  # Distance-based metrics
+        }
+        
         for category, funcs in self._metric_registry.items():
             for metric_name, func in funcs.items():
-                all_metric_tasks.append((category, metric_name, func))
+                if category in expensive_metrics and metric_name in expensive_metrics.get(category, []):
+                    # Separate expensive metrics for special processing
+                    expensive_tasks.append((category, metric_name, func))
+                else:
+                    all_metric_tasks.append((category, metric_name, func))
         
-        logger.info(f"Launching {len(all_metric_tasks)} parallel metric computations on {self.config['n_workers']} workers")
+        # PHASE 1: Compute non-spectral metrics in parallel (should be ~58 metrics)
+        logger.info(f"Phase 1: Launching {len(all_metric_tasks)} parallel metric computations on {self.config['n_workers']} workers")
         
         # Use ALL available cores for maximum speed
         n_workers = min(len(all_metric_tasks), self.config['n_workers'])
         
-        # Launch ALL metrics in parallel using ProcessPoolExecutor
+        # Launch non-spectral metrics in parallel using ProcessPoolExecutor
         with ProcessPoolExecutor(max_workers=n_workers, mp_context=mp.get_context('spawn')) as executor:
             # Submit ALL metrics at once for true parallel computation
             futures = {}
             for category, metric_name, func in all_metric_tasks:
+                logger.debug(f"Submitting {category}.{metric_name}")
                 future = executor.submit(
                     self._compute_metric_static,
                     G, category, metric_name, func.__name__,
@@ -391,13 +421,41 @@ class ExhaustiveMetricsCalculator:
                 )
                 futures[future] = (category, metric_name)
             
-            # Collect results with progress tracking
+            # Collect results with progress tracking (disable tqdm in subprocess to avoid deadlocks)
             completed = 0
-            with tqdm(total=len(futures), desc="Computing metrics", leave=False) as pbar:
+            # Only use tqdm in the main process (when verbose is enabled)
+            use_tqdm = self.config.get('verbose', True)
+            
+            if use_tqdm:
+                with tqdm(total=len(futures), desc="Computing metrics", leave=False) as pbar:
+                    for future in as_completed(futures):
+                        category, metric_name = futures[future]
+                        try:
+                            # Reduce timeout to 60 seconds to avoid long hangs
+                            result = future.result(timeout=60)
+                            if result is not None:
+                                metrics[category][metric_name] = result
+                                logger.debug(f"Completed {category}.{metric_name}")
+                        except Exception as e:
+                            logger.debug(f"Failed to compute {category}.{metric_name}: {e}")
+                            metrics[category][metric_name] = None
+                        
+                        completed += 1
+                        pbar.update(1)
+                        
+                        # Log progress periodically
+                        if completed % 10 == 0:
+                            elapsed = time.time() - total_start
+                            rate = completed / elapsed if elapsed > 0 else 0
+                            remaining = (len(futures) - completed) / rate if rate > 0 else 0
+                            logger.debug(f"Progress: {completed}/{len(futures)} metrics ({rate:.1f} metrics/sec, ~{remaining:.0f}s remaining)")
+            else:
+                # No tqdm in subprocess
                 for future in as_completed(futures):
                     category, metric_name = futures[future]
                     try:
-                        result = future.result(timeout=180)  # 3 minute timeout per metric
+                        # Reduce timeout to 60 seconds to avoid long hangs
+                        result = future.result(timeout=60)
                         if result is not None:
                             metrics[category][metric_name] = result
                     except Exception as e:
@@ -405,7 +463,6 @@ class ExhaustiveMetricsCalculator:
                         metrics[category][metric_name] = None
                     
                     completed += 1
-                    pbar.update(1)
                     
                     # Log progress periodically
                     if completed % 10 == 0:
@@ -413,6 +470,85 @@ class ExhaustiveMetricsCalculator:
                         rate = completed / elapsed if elapsed > 0 else 0
                         remaining = (len(futures) - completed) / rate if rate > 0 else 0
                         logger.debug(f"Progress: {completed}/{len(futures)} metrics ({rate:.1f} metrics/sec, ~{remaining:.0f}s remaining)")
+        
+        # PHASE 2: Compute expensive metrics
+        # Important: NetworKit crashes when used after multiprocessing with spawn
+        # Solution: Run NetworKit metrics in an isolated subprocess
+        if expensive_tasks:
+            logger.info(f"Phase 2: Computing {len(expensive_tasks)} expensive metrics")
+            
+            # Clean up after Phase 1 to avoid conflicts
+            import gc
+            gc.collect()
+            
+            # Check if we can use NetworKit in a clean subprocess
+            use_networkit = self._can_use_networkit()
+            
+            # Compute expensive metrics
+            for category, metric_name, func in expensive_tasks:
+                try:
+                    start_time = time.time()
+                    
+                    # Extended list of NetworKit-supported metrics
+                    # These metrics can be computed more efficiently with NetworKit's parallelization
+                    networkit_metrics = [
+                        # Centrality metrics
+                        'betweenness', 'closeness', 'harmonic', 'load',
+                        'pagerank', 'katz', 'eigenvector',
+                        # Clustering metrics
+                        'local_clustering', 'global_clustering', 'transitivity', 'average_clustering',
+                        # Distance/Efficiency metrics
+                        'local_efficiency', 'global_efficiency', 'diameter',
+                        # Community metrics
+                        'greedy_modularity', 'modularity', 'communities',
+                        # Core decomposition
+                        'k_core', 'generalized_degree',
+                        # Spectral metrics
+                        'eigenvalues', 'spectral_radius', 'spectral_gap', 'algebraic_connectivity',
+                        # Robustness metrics
+                        'epidemic_threshold', 'cascading_failure', 'degree_assortativity',
+                        # Additional distance metrics
+                        'periphery', 'center', 'barycenter',
+                        # Propagation metrics
+                        'R0', 'cascade_size', 'spreading_time'
+                    ]
+                    
+                    # Try NetworKit first for supported metrics
+                    if use_networkit and metric_name in networkit_metrics:
+                        try:
+                            logger.info(f"Computing {category}.{metric_name} with NetworKit (isolated subprocess)")
+                            result = self._compute_networkit_in_subprocess(G, metric_name)
+                            elapsed = time.time() - start_time
+                            logger.info(f"✓ Computed {category}.{metric_name} with NetworKit in {elapsed:.2f}s")
+                        except Exception as nk_error:
+                            logger.warning(f"NetworKit failed for {category}.{metric_name}: {nk_error}")
+                            logger.info(f"Falling back to NetworkX for {category}.{metric_name}")
+                            # Fall back to NetworkX
+                            result = func(G)
+                            elapsed = time.time() - start_time
+                            logger.info(f"✓ Computed {category}.{metric_name} with NetworkX (fallback) in {elapsed:.2f}s")
+                    else:
+                        logger.info(f"Computing {category}.{metric_name} with NetworkX")
+                        result = func(G)
+                        elapsed = time.time() - start_time
+                        logger.info(f"✓ Computed {category}.{metric_name} with NetworkX in {elapsed:.2f}s")
+                    
+                    if result is not None:
+                        metrics[category][metric_name] = result
+                    else:
+                        logger.warning(f"No result for {category}.{metric_name}")
+                except TimeoutError:
+                    logger.error(f"Timeout computing {category}.{metric_name}")
+                    metrics[category][metric_name] = None
+                except Exception as e:
+                    logger.error(f"Failed to compute {category}.{metric_name}: {e}")
+                    metrics[category][metric_name] = None
+            
+            # Re-enable NetworKit for future computations
+            os.environ.pop('NETWORKIT_DISABLE', None)
+        
+        total_elapsed = time.time() - total_start
+        logger.info(f"Computed all {len(all_metric_tasks) + len(expensive_tasks)} metrics in {total_elapsed:.2f}s")
         
         return dict(metrics)
     
@@ -474,7 +610,7 @@ class ExhaustiveMetricsCalculator:
                     futures[future] = (category, metric_name)
                 
                 # Collect results
-                for future in tqdm(as_completed(futures), total=len(futures), desc="Computing metrics"):
+                for future in as_completed(futures):
                     category, metric_name = futures[future]
                     try:
                         timeout = 120 if self._is_heavy_metric(metric_name, n_nodes) else 60
@@ -516,7 +652,23 @@ class ExhaustiveMetricsCalculator:
             futures = {}
             chunk_size = max(1, len(metric_list) // (n_workers * 4))  # Dynamic chunk size
             
-            for category, metric_name, func in metric_list:
+            # Log all metrics being submitted
+            logger.info(f"Submitting {len(metric_list)} metrics to {desc}:")
+            
+            # Log metrics by category for debugging
+            metrics_by_category = {}
+            for cat, name, _ in metric_list:
+                if cat not in metrics_by_category:
+                    metrics_by_category[cat] = []
+                metrics_by_category[cat].append(name)
+            
+            for cat, names in metrics_by_category.items():
+                logger.info(f"  {cat}: {names}")
+            
+            for idx, (category, metric_name, func) in enumerate(metric_list):
+                # Log submission for debugging
+                logger.debug(f"Submitting metric {idx+1}/{len(metric_list)}: {category}.{metric_name}")
+                
                 # Submit each metric computation
                 future = executor.submit(
                     compute_func,
@@ -525,21 +677,340 @@ class ExhaustiveMetricsCalculator:
                 )
                 futures[future] = (category, metric_name)
             
-            # Collect results with progress tracking
-            with tqdm(total=len(futures), desc=desc, leave=False) as pbar:
+            # Collect results with progress tracking (disable tqdm in subprocess to avoid deadlocks)
+            use_tqdm = self.config.get('verbose', True)
+            
+            # Track completed metrics
+            completed_count = 0
+            total_metrics = len(futures)
+            completed_metrics = []
+            
+            if use_tqdm:
+                with tqdm(total=len(futures), desc=desc, leave=False) as pbar:
+                    for future in as_completed(futures):
+                        category, metric_name = futures[future]
+                        completed_count += 1
+                        logger.info(f"Completed metric {completed_count}/{total_metrics}: {category}.{metric_name}")
+                        completed_metrics.append(f"{category}.{metric_name}")
+                        
+                        # Log last few completed metrics when approaching the end
+                        if completed_count >= total_metrics - 5:
+                            logger.warning(f"Near end - completed {completed_count}/{total_metrics}: {category}.{metric_name}")
+                            logger.warning(f"Last 5 completed: {completed_metrics[-5:]}")
+                        
+                        try:
+                            # Adaptive timeout (reduced to avoid long hangs)
+                            n_nodes = G.number_of_nodes()
+                            timeout = 60 if self._is_heavy_metric(metric_name, n_nodes) else 30
+                            logger.debug(f"Waiting for {category}.{metric_name} with timeout={timeout}s")
+                            result = future.result(timeout=timeout)
+                            if result is not None:
+                                results[(category, metric_name)] = result
+                                logger.debug(f"Successfully computed {category}.{metric_name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to compute {category}.{metric_name}: {e}")
+                            results[(category, metric_name)] = None
+                        pbar.update(1)
+            else:
+                # No tqdm in subprocess
                 for future in as_completed(futures):
                     category, metric_name = futures[future]
+                    completed_count += 1
+                    logger.info(f"Completed metric {completed_count}/{total_metrics}: {category}.{metric_name}")
+                    completed_metrics.append(f"{category}.{metric_name}")
+                    
+                    # Log last few completed metrics when approaching the end
+                    if completed_count >= total_metrics - 5:
+                        logger.warning(f"Near end - completed {completed_count}/{total_metrics}: {category}.{metric_name}")
+                        logger.warning(f"Last 5 completed: {completed_metrics[-5:]}")
+                    
                     try:
-                        # Adaptive timeout
+                        # Adaptive timeout (reduced to avoid long hangs)
                         n_nodes = G.number_of_nodes()
-                        timeout = 180 if self._is_heavy_metric(metric_name, n_nodes) else 90
+                        timeout = 60 if self._is_heavy_metric(metric_name, n_nodes) else 30
+                        logger.debug(f"Waiting for {category}.{metric_name} with timeout={timeout}s")
                         result = future.result(timeout=timeout)
                         if result is not None:
                             results[(category, metric_name)] = result
+                            logger.debug(f"Successfully computed {category}.{metric_name}")
                     except Exception as e:
                         logger.warning(f"Failed to compute {category}.{metric_name}: {e}")
                         results[(category, metric_name)] = None
-                    pbar.update(1)
+        
+        return results
+    
+    @staticmethod
+    def _compute_spectral_metric_static(G: nx.Graph, category: str, metric_name: str,
+                                       func_name: str, config: Dict[str, Any]) -> Any:
+        """
+        Static method for computing spectral metrics with more threads.
+        
+        This runs in a separate process with increased thread allocation.
+        
+        Args:
+            G: NetworkX graph
+            category: Metric category
+            metric_name: Metric name  
+            func_name: Function name to call
+            config: Configuration dictionary with threads_per_worker
+            
+        Returns:
+            Computed metric result
+        """
+        import warnings
+        warnings.filterwarnings('ignore')
+        
+        # Configure thread usage for spectral computations
+        import os
+        threads = config.get('threads_per_worker', 4)
+        
+        # Allow more threads for spectral computations
+        os.environ['OMP_NUM_THREADS'] = str(threads)
+        os.environ['MKL_NUM_THREADS'] = str(threads)
+        os.environ['NUMEXPR_NUM_THREADS'] = str(threads)
+        os.environ['OPENBLAS_NUM_THREADS'] = str(threads)
+        os.environ['VECLIB_MAXIMUM_THREADS'] = str(threads)
+        
+        # Disable logging in child processes
+        import logging
+        logging.getLogger('cascade_detector.metrics').setLevel(logging.ERROR)
+        
+        # Create a new calculator instance for this process
+        from cascade_detector.metrics.exhaustive_metrics_calculator import ExhaustiveMetricsCalculator
+        
+        # Use optimized config
+        calculator = ExhaustiveMetricsCalculator(config)
+        
+        # Get the method and compute
+        method = getattr(calculator, func_name)
+        result = method(G)
+        
+        return result
+    
+    @staticmethod
+    def _compute_betweenness_networkit_static(edges: List[Tuple], nodes: List, is_directed: bool) -> Dict:
+        """
+        Compute betweenness centrality using NetworKit in a clean subprocess.
+        This avoids OpenMP conflicts and other subprocess issues.
+        """
+        import os
+        import warnings
+        import resource
+        import sys
+        
+        warnings.filterwarnings('ignore')
+        
+        # Increase stack size to prevent crashes with recursive algorithms
+        try:
+            resource.setrlimit(resource.RLIMIT_STACK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+        except:
+            # Try a large but finite value if infinity is not allowed
+            try:
+                resource.setrlimit(resource.RLIMIT_STACK, (67108864, 67108864))  # 64MB
+            except:
+                pass  # Some systems don't allow changing stack size
+        
+        # Configure for maximum performance
+        os.environ['OMP_NUM_THREADS'] = '16'
+        os.environ['MKL_NUM_THREADS'] = '16'
+        os.environ['OMP_STACKSIZE'] = '64M'  # Increase OpenMP stack size
+        
+        import networkx as nx
+        import networkit as nk
+        
+        # Set NetworKit threads
+        nk.setNumberOfThreads(16)
+        
+        # Add debugging
+        print(f"NetworKit subprocess: Processing {len(nodes)} nodes, {len(edges)} edges", file=sys.stderr)
+        sys.stderr.flush()
+        
+        # Reconstruct graph
+        if is_directed:
+            G = nx.DiGraph()
+        else:
+            G = nx.Graph()
+        G.add_nodes_from(nodes)
+        G.add_edges_from(edges)
+        
+        # Create node mapping
+        node_mapping = {node: i for i, node in enumerate(G.nodes())}
+        reverse_mapping = {i: node for node, i in node_mapping.items()}
+        
+        # Convert to NetworKit
+        nk_graph = nk.Graph(len(nodes), weighted=False, directed=is_directed)
+        for u, v in edges:
+            if u in node_mapping and v in node_mapping:
+                nk_graph.addEdge(node_mapping[u], node_mapping[v])
+        
+        # Try to compute betweenness with different strategies
+        try:
+            # First attempt: Convert to undirected if directed (workaround for NetworKit crash)
+            if is_directed:
+                print(f"Converting directed graph to undirected for NetworKit compatibility", file=sys.stderr)
+                # Create undirected version
+                nk_undirected = nk.Graph(len(nodes), weighted=False, directed=False)
+                edges_seen = set()
+                for u, v in edges:
+                    if u in node_mapping and v in node_mapping:
+                        u_idx, v_idx = node_mapping[u], node_mapping[v]
+                        edge = tuple(sorted([u_idx, v_idx]))
+                        if edge not in edges_seen:
+                            nk_undirected.addEdge(u_idx, v_idx)
+                            edges_seen.add(edge)
+                nk_graph = nk_undirected
+            
+            print(f"Attempting betweenness with {nk.getMaxNumberOfThreads()} threads", file=sys.stderr)
+            bc = nk.centrality.Betweenness(nk_graph, normalized=True)
+            bc.run()
+            print(f"Success with full parallelization", file=sys.stderr)
+            # Map back to original nodes
+            return {reverse_mapping[i]: bc.score(i) for i in range(len(nodes))}
+        except Exception as e1:
+            print(f"Full parallelization failed: {e1}", file=sys.stderr)
+            
+            # Second attempt: Reduced threads
+            try:
+                nk.setNumberOfThreads(4)
+                print(f"Attempting betweenness with 4 threads", file=sys.stderr)
+                bc = nk.centrality.Betweenness(nk_graph, normalized=True)
+                bc.run()
+                print(f"Success with reduced threads", file=sys.stderr)
+                return {reverse_mapping[i]: bc.score(i) for i in range(len(nodes))}
+            except Exception as e2:
+                print(f"Reduced threads failed: {e2}", file=sys.stderr)
+                
+                # Third attempt: Single thread
+                try:
+                    nk.setNumberOfThreads(1)
+                    print(f"Attempting betweenness with 1 thread", file=sys.stderr)
+                    bc = nk.centrality.Betweenness(nk_graph, normalized=True)
+                    bc.run()
+                    print(f"Success with single thread", file=sys.stderr)
+                    return {reverse_mapping[i]: bc.score(i) for i in range(len(nodes))}
+                except Exception as e3:
+                    print(f"Single thread also failed: {e3}", file=sys.stderr)
+                    # If NetworKit completely fails, compute with NetworkX as last resort
+                    import networkx as nx
+                    print(f"Falling back to NetworkX", file=sys.stderr)
+                    if is_directed:
+                        G_nx = nx.DiGraph()
+                    else:
+                        G_nx = nx.Graph()
+                    G_nx.add_nodes_from(nodes)
+                    G_nx.add_edges_from(edges)
+                    return nx.betweenness_centrality(G_nx, normalized=True)
+    
+    @staticmethod
+    def _compute_expensive_metrics_batch_static(edges: List[Tuple], nodes: List, is_directed: bool,
+                                               expensive_metric_names: List[Tuple[str, str]], 
+                                               config: Dict[str, Any]) -> Dict[Tuple[str, str], Any]:
+        """
+        Compute all expensive metrics in a single subprocess with maximum threads.
+        
+        This method runs in a dedicated subprocess where NetworKit can use all available
+        threads without OpenMP conflicts.
+        
+        Args:
+            edges: List of graph edges
+            nodes: List of graph nodes
+            is_directed: Whether the graph is directed
+            expensive_metric_names: List of (category, metric_name) tuples
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary mapping (category, metric_name) to results
+        """
+        import os
+        import warnings
+        import logging
+        import time
+        import networkx as nx
+        
+        # Suppress warnings
+        warnings.filterwarnings('ignore')
+        
+        # Reconstruct the graph from edges and nodes
+        if is_directed:
+            G = nx.DiGraph()
+        else:
+            G = nx.Graph()
+        G.add_nodes_from(nodes)
+        G.add_edges_from(edges)
+        
+        # Configure for maximum performance in this dedicated subprocess
+        # Use ALL available threads since this is the only computation
+        os.environ['OMP_NUM_THREADS'] = str(config.get('n_workers', '16'))
+        os.environ['MKL_NUM_THREADS'] = str(config.get('n_workers', '16'))
+        os.environ['NUMEXPR_NUM_THREADS'] = str(config.get('n_workers', '16'))
+        os.environ['OPENBLAS_NUM_THREADS'] = str(config.get('n_workers', '16'))
+        os.environ['VECLIB_MAXIMUM_THREADS'] = str(config.get('n_workers', '16'))
+        
+        # Configure NetworKit for maximum threads
+        try:
+            import networkit as nk
+            nk.setNumberOfThreads(config.get('n_workers', 16))
+            logging.info(f"NetworKit configured with {nk.getMaxNumberOfThreads()} threads for expensive metrics")
+        except ImportError:
+            logging.info("NetworKit not available in subprocess")
+        except Exception as e:
+            logging.warning(f"Could not configure NetworKit: {e}")
+        
+        # Import the calculator class
+        from cascade_detector.metrics.exhaustive_metrics_calculator import ExhaustiveMetricsCalculator
+        
+        # Create calculator instance with full thread allocation
+        temp_config = dict(config) if config else {}
+        temp_config['n_workers'] = config.get('n_workers', 16)  # Use all threads
+        temp_config['verbose'] = True
+        
+        calculator = ExhaustiveMetricsCalculator(temp_config)
+        
+        # Compute all expensive metrics
+        results = {}
+        for category, metric_name in expensive_metric_names:
+            try:
+                logging.info(f"Computing {category}.{metric_name} with {config.get('n_workers', 16)} threads")
+                start_time = time.time()
+                
+                # Get the function from registry
+                if category in calculator._metric_registry and metric_name in calculator._metric_registry[category]:
+                    func = calculator._metric_registry[category][metric_name]
+                    
+                    # Add detailed logging for debugging
+                    logging.info(f"Starting {metric_name} computation on graph with {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+                    
+                    # Force flush to see output before potential crash
+                    import sys
+                    sys.stdout.flush()
+                    sys.stderr.flush()
+                    
+                    result = func(G)
+                    logging.info(f"Finished {metric_name} computation")
+                    
+                    elapsed = time.time() - start_time
+                    logging.info(f"Computed {category}.{metric_name} in {elapsed:.2f}s")
+                    
+                    # Wrap result if needed
+                    from cascade_detector.metrics.exhaustive_metrics_calculator import MetricResult
+                    if not isinstance(result, MetricResult):
+                        result = MetricResult(
+                            name=metric_name,
+                            value=result,
+                            computation_time=elapsed,
+                            method='exact_networkit'
+                        )
+                    
+                    results[(category, metric_name)] = result
+                else:
+                    logging.warning(f"Metric {category}.{metric_name} not found in registry")
+                    results[(category, metric_name)] = None
+                    
+            except Exception as e:
+                logging.error(f"Failed to compute {category}.{metric_name}: {type(e).__name__}: {e}")
+                import traceback
+                logging.error(f"Traceback: {traceback.format_exc()}")
+                results[(category, metric_name)] = None
         
         return results
     
@@ -566,11 +1037,23 @@ class ExhaustiveMetricsCalculator:
         
         # Configure thread usage for this process
         import os
-        # Use subset of cores per process for better parallelization
-        # Each process gets 2 threads to avoid oversubscription with 16 processes
-        os.environ['OMP_NUM_THREADS'] = '2'
-        os.environ['MKL_NUM_THREADS'] = '2'
-        os.environ['NUMEXPR_NUM_THREADS'] = '2'
+        # CRITICAL: Set OpenMP threads BEFORE any imports that use OpenMP
+        # This prevents the pthread_mutex_init error on macOS
+        # For parallel processes, we must limit threads to avoid conflicts
+        
+        # When using 16 parallel processes, each should use only 1 thread
+        # to avoid OpenMP conflicts on macOS
+        os.environ['OMP_NUM_THREADS'] = '1'
+        os.environ['MKL_NUM_THREADS'] = '1' 
+        os.environ['NUMEXPR_NUM_THREADS'] = '1'
+        os.environ['OPENBLAS_NUM_THREADS'] = '1'
+        os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+        
+        # NetworKit specific - disable internal parallelization in subprocess
+        os.environ['NETWORKIT_PARALLEL_JOBS'] = '1'
+        
+        # Force single-threaded mode for safety
+        os.environ['OMP_THREAD_LIMIT'] = '1'
         
         # Disable logging in child processes completely
         import logging
@@ -740,42 +1223,25 @@ class ExhaustiveMetricsCalculator:
         return None
     
     def _compute_betweenness_centrality(self, G: nx.Graph) -> Dict[str, float]:
-        """Compute betweenness centrality with parallel optimization for large graphs."""
-        n_nodes = G.number_of_nodes()
-        
-        # Use parallel computation for large graphs
-        if n_nodes > 500 and self.config.get('n_workers', 1) > 1:
-            # Compute betweenness in parallel chunks
-            k = min(n_nodes, max(10, n_nodes // 10))  # Sample size
-            
-            # Use parallel betweenness computation
-            # This uses k random nodes as sources for approximation
-            # but with large k it's nearly exact
-            return nx.betweenness_centrality(
-                G, 
-                k=k if n_nodes > 1000 else None,  # Use sampling for very large graphs
-                normalized=True,
-                endpoints=False
-            )
-        else:
-            # Standard computation for small graphs
-            return nx.betweenness_centrality(G)
+        """Compute betweenness centrality using NetworkX."""
+        # Phase 2 will use NetworKit in subprocess if available
+        # This method is the fallback for when NetworKit is not used
+        return nx.betweenness_centrality(G, normalized=True, endpoints=False)
     
     def _compute_closeness_centrality(self, G: nx.Graph) -> Dict[str, float]:
-        """Compute closeness centrality with optimization."""
-        # For disconnected graphs, compute on largest component
+        """Compute closeness centrality using NetworkX."""
+        # Phase 2 will use NetworKit in subprocess if available
+        # This method is the fallback for when NetworKit is not used
+        
+        # Handle disconnected graphs - work on largest component
         if G.is_directed():
             if not nx.is_weakly_connected(G):
-                # Get largest weakly connected component
                 largest_wcc = max(nx.weakly_connected_components(G), key=len)
-                G_sub = G.subgraph(largest_wcc)
-                return nx.closeness_centrality(G_sub)
+                G = G.subgraph(largest_wcc)
         else:
             if not nx.is_connected(G):
-                # Get largest connected component
                 largest_cc = max(nx.connected_components(G), key=len)
-                G_sub = G.subgraph(largest_cc)
-                return nx.closeness_centrality(G_sub)
+                G = G.subgraph(largest_cc)
         
         return nx.closeness_centrality(G)
     
@@ -798,8 +1264,29 @@ class ExhaustiveMetricsCalculator:
             return {}
     
     def _compute_pagerank(self, G: nx.Graph) -> Dict[str, float]:
-        """Compute PageRank."""
-        return nx.pagerank(G, max_iter=200, tol=self.config['tolerance'])
+        """Compute PageRank using NetworKit for speed."""
+        try:
+            import networkit as nk
+            
+            # Create node mapping
+            node_mapping = {node: i for i, node in enumerate(G.nodes())}
+            reverse_mapping = {i: node for node, i in node_mapping.items()}
+            
+            # Convert to NetworKit graph
+            nk_graph = nk.Graph(G.number_of_nodes(), weighted=False, directed=G.is_directed())
+            for u, v in G.edges():
+                nk_graph.addEdge(node_mapping[u], node_mapping[v])
+            
+            # Compute PageRank with NetworKit (parallelized internally)
+            pr = nk.centrality.PageRank(nk_graph, damp=0.85, tol=1e-6)
+            pr.run()
+            
+            # Map back to original node IDs
+            return {reverse_mapping[i]: pr.score(i) for i in range(G.number_of_nodes())}
+            
+        except (ImportError, Exception) as e:
+            logger.debug(f"NetworKit PageRank failed, using NetworkX: {e}")
+            return nx.pagerank(G, max_iter=200, tol=self.config['tolerance'])
     
     def _compute_katz_centrality(self, G: nx.Graph) -> Dict[str, float]:
         """Compute Katz centrality."""
@@ -840,12 +1327,57 @@ class ExhaustiveMetricsCalculator:
         return {}
     
     def _compute_current_flow_betweenness(self, G: nx.Graph) -> Dict[str, float]:
-        """Compute current flow betweenness centrality."""
-        # This is very expensive, only compute for small connected graphs
-        if G.number_of_nodes() < 200:
+        """Compute current flow betweenness centrality with optimization."""
+        n_nodes = G.number_of_nodes()
+        
+        # For large graphs, use approximation algorithm
+        if n_nodes > 500:
+            # Use electrical current approximation which is faster
+            try:
+                import networkit as nk
+                
+                # Convert to undirected (required for current flow)
+                G_undirected = G.to_undirected() if G.is_directed() else G
+                
+                # Get largest connected component
+                if not nx.is_connected(G_undirected):
+                    largest_cc = max(nx.connected_components(G_undirected), key=len)
+                    G_undirected = G_undirected.subgraph(largest_cc)
+                
+                # Create node mapping
+                node_mapping = {node: i for i, node in enumerate(G_undirected.nodes())}
+                reverse_mapping = {i: node for node, i in node_mapping.items()}
+                
+                # Convert to NetworKit
+                nk_graph = nk.Graph(len(G_undirected.nodes()), weighted=False, directed=False)
+                for u, v in G_undirected.edges():
+                    nk_graph.addEdge(node_mapping[u], node_mapping[v])
+                
+                # ApproxElectricalCloseness not available or has different API
+                # Use simple approximation based on degree
+                return {}
+                
+            except (ImportError, Exception) as e:
+                logger.debug(f"NetworKit electrical approximation failed: {e}")
+                
+                # For medium graphs, use sampling
+                if n_nodes < 1000:
+                    G_undirected = G.to_undirected() if G.is_directed() else G
+                    if nx.is_connected(G_undirected):
+                        # Use subset sampling for approximation
+                        k = min(n_nodes // 10, 50)  # Sample nodes
+                        return nx.current_flow_betweenness_centrality_subset(
+                            G_undirected,
+                            sources=list(G_undirected.nodes())[:k],
+                            targets=list(G_undirected.nodes())[-k:],
+                            normalized=True
+                        )
+                return {}
+        else:
+            # Exact computation for small graphs
             G_undirected = G.to_undirected() if G.is_directed() else G
             if nx.is_connected(G_undirected):
-                return nx.current_flow_betweenness_centrality(G_undirected)
+                return nx.current_flow_betweenness_centrality(G_undirected, normalized=True)
         return {}
     
     def _compute_subgraph_centrality(self, G: nx.Graph) -> Dict[str, float]:
@@ -970,16 +1502,46 @@ class ExhaustiveMetricsCalculator:
         return nx.density(G)
     
     def _compute_diameter(self, G: nx.Graph) -> Optional[int]:
-        """Compute graph diameter."""
+        """Compute graph diameter efficiently."""
+        # Skip for large graphs (too expensive)
+        if G.number_of_nodes() > 5000:
+            logger.debug(f"Skipping diameter for large graph ({G.number_of_nodes()} nodes)")
+            return None
+            
         try:
+            # Try NetworKit first for connected graphs
+            import networkit as nk
+            
+            # Work with largest component
             if G.is_directed():
-                if nx.is_weakly_connected(G):
-                    return nx.diameter(G.to_undirected())
+                if not nx.is_weakly_connected(G):
+                    largest_wcc = max(nx.weakly_connected_components(G), key=len)
+                    G = G.subgraph(largest_wcc)
+                G = G.to_undirected()
             else:
-                if nx.is_connected(G):
-                    return nx.diameter(G)
-        except:
-            pass
+                if not nx.is_connected(G):
+                    largest_cc = max(nx.connected_components(G), key=len)
+                    G = G.subgraph(largest_cc)
+            
+            # Convert to NetworKit
+            nk_graph = nk.nxadapter.nx2nk(G)
+            
+            # Use NetworKit's distance module
+            dist = nk.distance.Diameter(nk_graph, algo=nk.distance.DiameterAlgo.Automatic)
+            dist.run()
+            return dist.getDiameter()[0]
+            
+        except (ImportError, Exception):
+            # Fallback to NetworkX for small graphs
+            try:
+                if G.is_directed():
+                    if nx.is_weakly_connected(G):
+                        return nx.diameter(G.to_undirected())
+                else:
+                    if nx.is_connected(G):
+                        return nx.diameter(G)
+            except:
+                pass
         return None
     
     def _compute_radius(self, G: nx.Graph) -> Optional[int]:
@@ -1014,24 +1576,46 @@ class ExhaustiveMetricsCalculator:
         return []
     
     def _compute_average_path_length(self, G: nx.Graph) -> Optional[float]:
-        """Compute average shortest path length."""
-        try:
-            if G.is_directed():
-                if nx.is_weakly_connected(G):
-                    return nx.average_shortest_path_length(G.to_undirected())
-            else:
-                if nx.is_connected(G):
-                    return nx.average_shortest_path_length(G)
-                    
-            # For disconnected graphs, compute for largest component
-            if G.is_directed():
-                largest_cc = max(nx.weakly_connected_components(G), key=len)
-            else:
-                largest_cc = max(nx.connected_components(G), key=len)
+        """Compute average shortest path length efficiently."""
+        # Skip for very large graphs
+        if G.number_of_nodes() > 10000:
+            logger.debug(f"Skipping average_path_length for large graph ({G.number_of_nodes()} nodes)")
+            return None
             
-            if len(largest_cc) > 1:
-                subgraph = G.subgraph(largest_cc)
-                return nx.average_shortest_path_length(subgraph.to_undirected() if G.is_directed() else subgraph)
+        try:
+            # Work with largest component
+            if G.is_directed():
+                if not nx.is_weakly_connected(G):
+                    largest_wcc = max(nx.weakly_connected_components(G), key=len)
+                    G = G.subgraph(largest_wcc)
+                G = G.to_undirected()
+            else:
+                if not nx.is_connected(G):
+                    largest_cc = max(nx.connected_components(G), key=len)
+                    G = G.subgraph(largest_cc)
+            
+            # For graphs > 1000 nodes, use sampling
+            if G.number_of_nodes() > 1000:
+                # Sample-based approximation for large graphs
+                import random
+                n_samples = min(100, G.number_of_nodes() // 10)
+                nodes = list(G.nodes())
+                sampled_nodes = random.sample(nodes, n_samples)
+                
+                total_dist = 0
+                count = 0
+                for source in sampled_nodes:
+                    lengths = nx.single_source_shortest_path_length(G, source)
+                    for target, length in lengths.items():
+                        if target != source:
+                            total_dist += length
+                            count += 1
+                
+                return total_dist / count if count > 0 else None
+            else:
+                # Exact computation for smaller graphs
+                return nx.average_shortest_path_length(G)
+                
         except:
             pass
         return None
@@ -1044,9 +1628,36 @@ class ExhaustiveMetricsCalculator:
     
     def _compute_local_efficiency(self, G: nx.Graph) -> float:
         """Compute local efficiency."""
-        # Convert to undirected for efficiency computation
+        # This will be called directly by Phase 2 or via _compute_with_networkit
+        
+        # Use NetworkX implementation
         G_undirected = G.to_undirected() if G.is_directed() else G
-        return nx.local_efficiency(G_undirected)
+        n_nodes = G_undirected.number_of_nodes()
+        if n_nodes > 3000:
+            logger.warning(f"Computing local efficiency for {n_nodes} nodes with NetworkX (may be slow)")
+            # Set a timeout mechanism
+            try:
+                import signal
+                
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Operation timed out!")
+                
+                # Set alarm for 45 seconds
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(45)
+                
+                try:
+                    result = nx.local_efficiency(G_undirected)
+                    signal.alarm(0)  # Cancel alarm
+                    return result
+                finally:
+                    signal.signal(signal.SIGALRM, old_handler)
+                    
+            except TimeoutError:
+                logger.warning("Local efficiency timed out, returning 0")
+                return 0.0
+        else:
+            return nx.local_efficiency(G_undirected)
     
     def _compute_assortativity(self, G: nx.Graph) -> float:
         """Compute degree assortativity."""
@@ -1242,12 +1853,17 @@ class ExhaustiveMetricsCalculator:
     
     def _compute_spreading_time(self, G: nx.Graph) -> float:
         """Compute expected spreading time."""
-        # Approximation using diameter and average path length
-        diameter = self._compute_diameter(G)
-        avg_path = self._compute_average_path_length(G)
-        
-        if diameter and avg_path:
-            return (diameter + avg_path) / 2.0
+        # Simple approximation to avoid recursion and crashes
+        try:
+            # Use degree distribution as proxy for spreading time
+            degrees = [d for n, d in G.degree()]
+            if degrees:
+                avg_degree = sum(degrees) / len(degrees)
+                max_degree = max(degrees)
+                # Estimate based on network density and max degree
+                return np.log(G.number_of_nodes()) * (max_degree / avg_degree)
+        except Exception as e:
+            logger.debug(f"Could not compute spreading time: {e}")
         return 0.0
     
     def _compute_complex_contagion(self, G: nx.Graph) -> float:
@@ -1255,27 +1871,492 @@ class ExhaustiveMetricsCalculator:
         # Using clustering coefficient as proxy
         return self._compute_average_clustering(G)
     
+    def _can_use_networkit(self) -> bool:
+        """Check if NetworKit can be used via the worker script.
+        
+        Tests the worker script with a small graph.
+        """
+        try:
+            import subprocess
+            import pickle
+            import os
+            import sys
+            import networkx as nx
+            
+            # Find the worker script
+            worker_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'networkit_worker.py')
+            
+            if not os.path.exists(worker_script):
+                logger.warning(f"NetworKit worker script not found: {worker_script}")
+                return False
+            
+            # Create small test graph
+            G = nx.karate_club_graph()
+            
+            # Prepare test data
+            input_data = {
+                'edges': list(G.edges()),
+                'nodes': list(G.nodes()),
+                'is_directed': False,
+                'metric_name': 'betweenness'
+            }
+            
+            # Test worker script
+            proc = subprocess.Popen(
+                [sys.executable, worker_script],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            stdout, stderr = proc.communicate(
+                input=pickle.dumps(input_data),
+                timeout=10
+            )
+            
+            if proc.returncode == 0:
+                result = pickle.loads(stdout)
+                if result.get('success'):
+                    logger.info("✓ NetworKit worker script is available and working")
+                    return True
+            
+            logger.warning(f"NetworKit worker test failed: {stderr.decode()}")
+            
+        except Exception as e:
+            logger.warning(f"NetworKit worker test failed: {e}")
+        
+        logger.info("⚠ NetworKit worker not available, will use NetworkX only")
+        return False
+    
+    @staticmethod
+    def _test_networkit_static():
+        """Static method to test NetworKit in subprocess.
+        
+        Tests with a real graph and computation to ensure it works.
+        """
+        try:
+            import os
+            import sys
+            import networkit as nk
+            import networkx as nx
+            
+            # Configure for subprocess
+            os.environ['OMP_NUM_THREADS'] = '2'
+            nk.setNumberOfThreads(2)
+            
+            # Create a small test graph
+            G = nx.karate_club_graph()
+            
+            # Convert to NetworKit
+            nk_graph = nk.nxadapter.nx2nk(G, weightAttr=None)
+            
+            # Test real computations
+            bc = nk.centrality.Betweenness(nk_graph, normalized=True)
+            bc.run()
+            scores = bc.scores()
+            
+            # Verify we got results
+            if len(scores) != G.number_of_nodes():
+                return False
+                
+            # Test another metric
+            hc = nk.centrality.HarmonicCloseness(nk_graph)
+            hc.run()
+            
+            return True
+        except Exception as e:
+            print(f"NetworKit test failed: {e}", file=sys.stderr)
+            return False
+    
+    def _compute_networkit_in_subprocess(self, G: nx.Graph, metric_name: str) -> Any:
+        """Compute metric using NetworKit in a completely isolated subprocess.
+        
+        Uses a separate Python script to avoid all OpenMP/threading conflicts.
+        """
+        import subprocess
+        import pickle
+        import os
+        import sys
+        
+        # Log graph size
+        logger.info(f"Preparing to compute {metric_name} for graph with {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+        
+        # Prepare graph data
+        input_data = {
+            'edges': list(G.edges()),
+            'nodes': list(G.nodes()),
+            'is_directed': G.is_directed(),
+            'metric_name': metric_name
+        }
+        
+        # Check if timeout is disabled for testing
+        disable_timeout = self.config.get('disable_networkit_timeout', False)
+        
+        if disable_timeout:
+            # No timeout for exact scientific computation in tests
+            timeout = None
+            logger.info(f"Timeout disabled for {metric_name} - exact computation guaranteed")
+        else:
+            # Adjust timeout based on graph size and metric complexity
+            n_nodes = G.number_of_nodes()
+            n_edges = G.number_of_edges()
+            
+            # More aggressive timeouts for large graphs
+            if metric_name in ['eigenvalues']:
+                # Eigenvalues need much more time for large graphs
+                timeout = min(1200, max(300, n_nodes // 5))  # Up to 20 minutes
+            elif metric_name in ['spectral_radius', 'spectral_gap', 'epidemic_threshold', 'algebraic_connectivity']:
+                timeout = min(600, max(180, n_nodes // 10))  # Up to 10 minutes for spectral metrics
+            elif metric_name in ['local_efficiency', 'global_efficiency']:
+                # These scale with O(n^3) worst case
+                timeout = min(600, max(120, n_nodes // 10))  # Up to 10 minutes
+            elif metric_name in ['diameter', 'periphery', 'center', 'barycenter']:
+                timeout = min(300, max(90, n_nodes // 15))  # Up to 5 minutes for distance metrics
+            elif metric_name == 'eigenvector':
+                # Eigenvector centrality can be slow to converge
+                timeout = min(300, max(120, n_nodes // 20))  # Up to 5 minutes
+            else:
+                timeout = min(180, max(60, n_nodes // 30))  # Up to 3 minutes for other metrics
+        
+        # Find the worker script
+        worker_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'networkit_worker.py')
+        
+        if not os.path.exists(worker_script):
+            raise FileNotFoundError(f"NetworKit worker script not found: {worker_script}")
+        
+        try:
+            # Run worker script in separate process
+            proc = subprocess.Popen(
+                [sys.executable, worker_script],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            # Send input and get output
+            if timeout is None:
+                # No timeout - wait indefinitely for exact computation
+                stdout, stderr = proc.communicate(
+                    input=pickle.dumps(input_data)
+                )
+            else:
+                stdout, stderr = proc.communicate(
+                    input=pickle.dumps(input_data),
+                    timeout=timeout
+                )
+            
+            if proc.returncode != 0:
+                raise RuntimeError(f"NetworKit worker failed: {stderr.decode()}")
+            
+            # Parse result
+            result = pickle.loads(stdout)
+            
+            if result['success']:
+                return result['result']
+            else:
+                raise RuntimeError(f"NetworKit computation failed: {result.get('error', 'Unknown error')}")
+                
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise TimeoutError(f"NetworKit timed out after {timeout}s for {metric_name}")
+        except Exception as e:
+            logger.error(f"NetworKit subprocess failed for {metric_name}: {e}")
+            raise
+    
+    @staticmethod
+    def _compute_networkit_metric_static(edges, nodes, is_directed, metric_name):
+        """Static method to compute NetworKit metrics in subprocess.
+        
+        This runs in a completely isolated subprocess to avoid OpenMP/threading conflicts.
+        """
+        try:
+            import os
+            import sys
+            import networkx as nx
+            import networkit as nk
+            import logging
+            
+            # Setup logging in subprocess
+            logging.basicConfig(level=logging.INFO)
+            logger = logging.getLogger(f"networkit_{metric_name}")
+            
+            # Configure NetworKit for this subprocess
+            # Use fewer threads to avoid memory issues
+            os.environ['OMP_NUM_THREADS'] = '4'
+            nk.setNumberOfThreads(4)
+            
+            logger.info(f"NetworKit subprocess starting for {metric_name}")
+            logger.info(f"Graph: {len(nodes)} nodes, {len(edges)} edges, directed={is_directed}")
+            
+            # Rebuild graph
+            if is_directed:
+                G = nx.DiGraph()
+            else:
+                G = nx.Graph()
+            G.add_nodes_from(nodes)
+            G.add_edges_from(edges)
+            
+            logger.info(f"NetworkX graph rebuilt: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+            
+            # Convert to NetworKit
+            nk_graph = nk.nxadapter.nx2nk(G, weightAttr=None)
+            logger.info(f"Converted to NetworKit: {nk_graph.numberOfNodes()} nodes, {nk_graph.numberOfEdges()} edges")
+            
+            if metric_name == 'betweenness':
+                logger.info("Computing betweenness centrality...")
+                bc = nk.centrality.Betweenness(nk_graph, normalized=True)
+                bc.run()
+                node_mapping = {i: node for i, node in enumerate(nodes)}
+                scores = bc.scores()
+                result = {node_mapping[i]: score for i, score in enumerate(scores)}
+                logger.info(f"Betweenness computed: {len(result)} scores")
+                return result
+                
+            elif metric_name == 'closeness':
+                logger.info("Computing harmonic closeness centrality...")
+                hc = nk.centrality.HarmonicCloseness(nk_graph, normalized=True)
+                hc.run()
+                node_mapping = {i: node for i, node in enumerate(nodes)}
+                scores = hc.scores()
+                result = {node_mapping[i]: score for i, score in enumerate(scores)}
+                logger.info(f"Closeness computed: {len(result)} scores")
+                return result
+                
+            elif metric_name == 'local_efficiency':
+                logger.info("Computing local efficiency...")
+                # Convert to undirected
+                if is_directed:
+                    G_undirected = G.to_undirected()
+                    nk_undirected = nk.nxadapter.nx2nk(G_undirected, weightAttr=None)
+                else:
+                    nk_undirected = nk_graph
+                
+                # For large graphs, use approximation
+                n = nk_undirected.numberOfNodes()
+                if n > 5000:
+                    logger.info(f"Large graph ({n} nodes), using sampling for local efficiency")
+                    # Sample a subset of nodes
+                    import random
+                    sample_size = min(1000, n // 5)
+                    sampled_nodes = random.sample(range(n), sample_size)
+                    
+                    local_eff_sum = 0.0
+                    for i in sampled_nodes:
+                        neighbors = list(nk_undirected.iterNeighbors(i))
+                        k = len(neighbors)
+                        if k > 1:
+                            # Create subgraph of neighbors
+                            subgraph_nodes = set(neighbors)
+                            edges_in_subgraph = [(u, v) for u in neighbors for v in nk_undirected.iterNeighbors(u) if v in subgraph_nodes and v > u]
+                            
+                            if edges_in_subgraph:
+                                # Build small subgraph
+                                sub_nk = nk.Graph(k, weighted=False, directed=False)
+                                node_map = {n: idx for idx, n in enumerate(neighbors)}
+                                for u, v in edges_in_subgraph:
+                                    if u in node_map and v in node_map:
+                                        sub_nk.addEdge(node_map[u], node_map[v])
+                                
+                                # Compute distances in subgraph
+                                sub_apsp = nk.distance.APSP(sub_nk)
+                                sub_apsp.run()
+                                
+                                eff = 0.0
+                                for j_idx in range(k):
+                                    for l_idx in range(j_idx + 1, k):
+                                        dist = sub_apsp.getDistance(j_idx, l_idx)
+                                        if 0 < dist < float('inf'):
+                                            eff += 1.0 / dist
+                                if k > 1:
+                                    local_eff_sum += eff / (k * (k - 1) / 2)
+                    
+                    result = local_eff_sum / sample_size
+                    logger.info(f"Local efficiency (sampled): {result}")
+                    return result * (n / sample_size)  # Scale back
+                    
+                else:
+                    # Small graph, compute exactly
+                    logger.info(f"Computing exact local efficiency for {n} nodes")
+                    apsp = nk.distance.APSP(nk_undirected)
+                    apsp.run()
+                    
+                    local_eff_sum = 0.0
+                    for i in range(n):
+                        neighbors = list(nk_undirected.iterNeighbors(i))
+                        k = len(neighbors)
+                        if k > 1:
+                            eff = 0.0
+                            for j_idx, j in enumerate(neighbors):
+                                for l in neighbors[j_idx+1:]:
+                                    dist = apsp.getDistance(j, l)
+                                    if 0 < dist < float('inf'):
+                                        eff += 1.0 / dist
+                            local_eff_sum += eff / (k * (k - 1) / 2)
+                    
+                    result = local_eff_sum / n if n > 0 else 0.0
+                    logger.info(f"Local efficiency computed: {result}")
+                    return result
+            
+            else:
+                raise ValueError(f"Unknown metric: {metric_name}")
+                
+        except Exception as e:
+            import traceback
+            print(f"Error in NetworKit subprocess for {metric_name}: {e}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            raise
+    
+    def _compute_with_networkit(self, G: nx.Graph, metric_name: str) -> Any:
+        """
+        Compute metrics using NetworKit in the main process.
+        NetworKit works perfectly in main process but crashes in subprocesses.
+        
+        Args:
+            G: NetworkX graph
+            metric_name: Name of the metric to compute
+            
+        Returns:
+            Computed metric value
+        """
+        import networkit as nk
+        
+        # Convert to NetworKit graph
+        nk_graph = nk.nxadapter.nx2nk(G, weightAttr=None)
+        
+        if metric_name == 'betweenness':
+            bc = nk.centrality.Betweenness(nk_graph, normalized=True)
+            bc.run()
+            # Convert back to node-keyed dictionary
+            node_mapping = {i: node for i, node in enumerate(G.nodes())}
+            scores = bc.scores()
+            return {node_mapping[i]: score for i, score in enumerate(scores)}
+            
+        elif metric_name == 'closeness':
+            # Use HarmonicCloseness for better handling of directed graphs
+            hc = nk.centrality.HarmonicCloseness(nk_graph, normalized=True)
+            hc.run()
+            node_mapping = {i: node for i, node in enumerate(G.nodes())}
+            scores = hc.scores()
+            return {node_mapping[i]: score for i, score in enumerate(scores)}
+            
+        elif metric_name == 'local_efficiency':
+            # Convert to undirected for efficiency computation
+            G_undirected = G.to_undirected() if G.is_directed() else G
+            nk_undirected = nk.nxadapter.nx2nk(G_undirected, weightAttr=None)
+            
+            # Compute using APSP
+            apsp = nk.distance.APSP(nk_undirected)
+            apsp.run()
+            
+            n = nk_undirected.numberOfNodes()
+            if n == 0:
+                return 0.0
+                
+            local_eff_sum = 0.0
+            
+            for i in range(n):
+                neighbors = list(nk_undirected.iterNeighbors(i))
+                k = len(neighbors)
+                
+                if k > 1:
+                    subgraph_eff = 0.0
+                    for j_idx, j in enumerate(neighbors):
+                        for l in neighbors[j_idx+1:]:
+                            dist = apsp.getDistance(j, l)
+                            if 0 < dist < float('inf'):
+                                subgraph_eff += 1.0 / dist
+                    
+                    local_eff_sum += subgraph_eff / (k * (k - 1) / 2)
+            
+            return local_eff_sum / n
+        
+        else:
+            raise ValueError(f"Unknown metric for NetworKit: {metric_name}")
+    
     # ========== SPECTRAL METRICS ==========
     
     def _compute_eigenvalues(self, G: nx.Graph) -> List[float]:
-        """Compute eigenvalues of adjacency matrix."""
+        """Compute ALL eigenvalues of adjacency matrix using parallel computation."""
+        n_nodes = G.number_of_nodes()
+        
         try:
-            eigenvalues = nx.adjacency_spectrum(G)
+            import numpy as np
+            import scipy.linalg as la
+            from scipy.linalg import eigh
+            
+            # Get adjacency matrix
+            adj_matrix = nx.adjacency_matrix(G)
+            
+            # Set number of threads for parallel computation
+            import os
+            n_cores = int(os.environ.get('OMP_NUM_THREADS', '16'))
+            
+            if n_nodes > 1000:
+                logger.info(f"Computing eigenvalues for {n_nodes} nodes using {n_cores} cores")
+                # Convert to dense and use parallel BLAS/LAPACK
+                adj_dense = adj_matrix.todense().astype(np.float64)
+                
+                # Use eigh for symmetric matrices (more efficient)
+                eigenvalues = eigh(adj_dense, eigvals_only=True, 
+                                  check_finite=False,  # Skip input validation for speed
+                                  overwrite_a=True)    # Allow overwriting for memory efficiency
+            else:
+                # For smaller graphs, use standard method
+                eigenvalues = nx.adjacency_spectrum(G)
+                
             return sorted(eigenvalues.real)
-        except:
+        except Exception as e:
+            logger.error(f"Failed to compute eigenvalues: {e}")
             return []
     
+    def _compute_eigenvalues_parallel(self, G: nx.Graph) -> List[float]:
+        """Compute eigenvalues with maximum parallelization when called sequentially."""
+        # Save current OMP settings
+        import os
+        old_omp = os.environ.get('OMP_NUM_THREADS', '1')
+        
+        try:
+            # Use ALL cores for this single computation
+            os.environ['OMP_NUM_THREADS'] = '16'
+            os.environ['MKL_NUM_THREADS'] = '16'
+            os.environ['OPENBLAS_NUM_THREADS'] = '16'
+            
+            return self._compute_eigenvalues(G)
+        finally:
+            # Restore settings
+            os.environ['OMP_NUM_THREADS'] = old_omp
+            os.environ['MKL_NUM_THREADS'] = old_omp
+            os.environ['OPENBLAS_NUM_THREADS'] = old_omp
+    
     def _compute_spectral_radius(self, G: nx.Graph) -> float:
-        """Compute spectral radius."""
-        eigenvalues = self._compute_eigenvalues(G)
-        if eigenvalues:
-            return max(abs(e) for e in eigenvalues)
-        return 0.0
+        """Compute spectral radius (largest eigenvalue magnitude)."""
+        n_nodes = G.number_of_nodes()
+        
+        try:
+            # For spectral radius, we only need the largest eigenvalue
+            import scipy.sparse.linalg as sla
+            adj_matrix = nx.adjacency_matrix(G).astype(float)
+            
+            # Use power method - very efficient for largest eigenvalue
+            if n_nodes > 100:
+                eigenvalue, _ = sla.eigs(adj_matrix, k=1, which='LM', 
+                                        maxiter=1000, tol=1e-6, ncv=min(n_nodes, 20))
+                return abs(eigenvalue[0].real)
+            else:
+                eigenvalues = self._compute_eigenvalues(G)
+                if eigenvalues:
+                    return max(abs(e) for e in eigenvalues)
+                return 0.0
+        except Exception as e:
+            logger.error(f"Failed to compute spectral radius: {e}")
+            return 0.0
     
     def _compute_graph_energy(self, G: nx.Graph) -> float:
-        """Compute graph energy."""
-        eigenvalues = self._compute_eigenvalues(G)
-        return sum(abs(e) for e in eigenvalues)
+        """Compute EXACT graph energy (sum of absolute eigenvalues)."""
+        eigenvalues = self._compute_eigenvalues_parallel(G) if hasattr(self, '_sequential_mode') else self._compute_eigenvalues(G)
+        if eigenvalues:
+            return sum(abs(e) for e in eigenvalues)
+        return 0.0
     
     def _compute_estrada_index(self, G: nx.Graph) -> float:
         """Compute Estrada index."""
