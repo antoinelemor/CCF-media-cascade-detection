@@ -28,7 +28,7 @@ This framework provides empirical tools to:
 3. **Quantify frame dominance**: measure which climate frames gain traction and why
 4. **Reveal coordination patterns**: uncover synchronized coverage across outlets that indicates cascade formation
 
-### How the cascade detector works: from database to discovery
+### How the cascade detector works
 
 The framework implements a sophisticated pipeline that transforms raw article data into cascade discoveries:
 
@@ -49,8 +49,6 @@ flowchart TD
     STEP5 --> STEP6["<b>STEP 6: CASCADE VALIDATION & CLASSIFICATION</b><br/><br/>• Statistical validation (permutation tests, bootstrap CI)<br/>• Cross-media verification (≥3 outlets required)<br/>• Temporal coherence (sustained vs spike patterns)<br/>• Frame convergence analysis<br/><br/><b>OUTPUT →</b> <i>Validated cascades with type and strength</i>"]
     
     STEP6 --> STEP7["<b>STEP 7: PATTERN DETECTION & MECHANISM IDENTIFICATION</b><br/><br/>• Echo chamber detection (self-reinforcing loops)<br/>• Cross-media tracking (synchronized coverage)<br/>• Sequence detection (typical propagation signatures)<br/>• Polarization measurement (ideological clustering)<br/><br/><b>OUTPUT →</b> <i>Cascade mechanisms and propagation patterns</i>"]
-    
-    STEP7 --> DISCOVERIES["<b>RESEARCH DISCOVERIES</b><br/><br/>• <b>Cascade triggers:</b> e.g., IPCC report → 200% coverage spike<br/>• <b>Propagation paths:</b> national → regional in 24-48 hours<br/>• <b>Frame dominance shifts:</b> economic → environmental after event<br/>• <b>Media coordination:</b> 5+ outlets publish within 6 hours<br/>• <b>Paradigm shifts:</b> multi-frame cascade events"]
     
     %% Styling
     classDef database fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px,color:#000
