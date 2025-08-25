@@ -1,0 +1,144 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.cache
+nosetests.xml
+coverage.xml
+*.coveragerc
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Data and Cache
+cache/
+*.pkl
+*.pickle
+*.pkl.gz
+*.csv
+*.xlsx
+*.json
+!cascade_detector/metrics/geographical_data/*.csv
+
+# Logs
+logs/
+*.log
+log_*.txt
+diagnostic_output.txt
+test_output.log
+
+# Results and Output
+results/
+test_output/
+output/
+epistemic_authority_results/
+network_analysis/
+*.gexf
+*.graphml
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+
+# ALL Python files at root level (tests, scripts, etc.)
+/*.py
+
+# ALL documentation except README
+
+!README.md
+**/*.md
+
+# Archives and Backups
+archives/
+backup/
+old/
+*.bak
+*.backup
+
+# Database dumps
+*.sql
+*.dump
+*.db
+
+# Configuration files
+*.ini
+*.cfg
+!setup.cfg
+
+# System files
+Thumbs.db
+.directory
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Python package files
+*.whl
+*.tar.gz
+*.zip
+
+# Requirements (keep these)
+!requirements.txt
+
+# Keep ONLY the main package and README
+!cascade_detector/
+!cascade_detector/**
+
+# But ignore cache files within the package
+cascade_detector/**/__pycache__/
+cascade_detector/**/*.pyc
+cascade_detector/**/*.pyo
+
+# Ignore the tests folder (not part of the package)
+tests/
+
+# ALL documentation except README
+**/*.md
+!README.md
+
