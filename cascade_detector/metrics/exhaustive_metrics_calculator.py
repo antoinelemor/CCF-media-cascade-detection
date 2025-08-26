@@ -613,8 +613,8 @@ class ExhaustiveMetricsCalculator:
                 for future in as_completed(futures):
                     category, metric_name = futures[future]
                     try:
-                        timeout = 120 if self._is_heavy_metric(metric_name, n_nodes) else 60
-                        result = future.result(timeout=timeout)
+                        # No timeout for exact computation - wait until completion
+                        result = future.result()
                         if result is not None:
                             metrics[category][metric_name] = result
                     except Exception as e:
