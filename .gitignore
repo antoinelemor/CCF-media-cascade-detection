@@ -1,0 +1,133 @@
+# Python
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+CODEBOOK.md
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.cache
+nosetests.xml
+coverage.xml
+*.coveragerc
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Data and Cache
+cache/
+*.pkl
+*.pickle
+*.pkl.gz
+*.xlsx
+
+# Logs
+logs/
+*.log
+log_*.txt
+diagnostic_output.txt
+test_output.log
+
+# Results and Output
+results/
+test_output/
+output/
+epistemic_authority_results/
+network_analysis/
+*.gexf
+*.graphml
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+
+# Archives and Backups
+archives/
+backup/
+old/
+*.bak
+*.backup
+
+# Database dumps
+*.sql
+*.dump
+*.db
+
+# System files
+Thumbs.db
+.directory
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Python package files
+*.whl
+*.tar.gz
+*.zip
+
+# Embeddings (large binary files)
+data/embeddings/
+data/embeddings-test/
+
+# Analysis archives
+analysis/
+
+# Lib (external bindings)
+lib/
+
+# Keep essential files
+!README.md
+!CLAUDE.md
+!requirements.txt
+!setup.cfg
+!cascade_detector/
+!cascade_detector/**
+# Tests and scripts excluded from git
+tests/
+scripts/
+!docs/
+!docs/**
+
+# Always ignore pycache (even inside kept directories)
+__pycache__/
