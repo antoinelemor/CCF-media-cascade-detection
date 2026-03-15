@@ -287,6 +287,33 @@ class EventOccurrenceDetector:
         if n_corrected:
             logger.info(f"Type validation: corrected {n_corrected} occurrence(s)")
 
+        # Remap event_clusters to reference final occurrences.
+        # Clusters still hold refs to temp_occurrences (pre-Phase 5) whose IDs
+        # are stale after renumbering. Match by seed_doc_ids signature.
+        seed_to_final = {}
+        for occ in occurrences:
+            key = (occ.event_type, frozenset(occ.seed_doc_ids))
+            seed_to_final[key] = occ
+        n_remapped = 0
+        for ec in event_clusters:
+            new_occs = []
+            for old_occ in ec.occurrences:
+                key = (old_occ.event_type, frozenset(old_occ.seed_doc_ids))
+                final_occ = seed_to_final.get(key)
+                if final_occ is not None:
+                    new_occs.append(final_occ)
+                    n_remapped += 1
+                else:
+                    new_occs.append(old_occ)
+            ec.occurrences = new_occs
+            ec.n_occurrences = len(new_occs)
+            ec.event_types = {o.event_type for o in new_occs}
+            ec.is_multi_type = len(ec.event_types) > 1
+        logger.info(
+            f"Remapped {n_remapped} occurrence refs in event clusters "
+            f"(final ID space)"
+        )
+
         # Update type_ranking on clusters using final occurrences' type_scores
         self._update_cluster_type_rankings(event_clusters, occurrences)
 
