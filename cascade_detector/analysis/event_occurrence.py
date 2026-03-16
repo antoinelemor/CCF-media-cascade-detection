@@ -295,6 +295,7 @@ class EventOccurrenceDetector:
             key = (occ.event_type, frozenset(occ.seed_doc_ids))
             seed_to_final[key] = occ
         n_remapped = 0
+        n_dropped = 0
         for ec in event_clusters:
             new_occs = []
             for old_occ in ec.occurrences:
@@ -304,14 +305,21 @@ class EventOccurrenceDetector:
                     new_occs.append(final_occ)
                     n_remapped += 1
                 else:
-                    new_occs.append(old_occ)
+                    # No matching final occurrence — drop stale ref
+                    n_dropped += 1
             ec.occurrences = new_occs
             ec.n_occurrences = len(new_occs)
-            ec.event_types = {o.event_type for o in new_occs}
-            ec.is_multi_type = len(ec.event_types) > 1
+            ec.event_types = {o.event_type for o in new_occs} if new_occs else ec.event_types
+            ec.is_multi_type = len(ec.event_types) > 1 if new_occs else ec.is_multi_type
+        # Remove empty clusters
+        n_before = len(event_clusters)
+        event_clusters[:] = [ec for ec in event_clusters if ec.occurrences]
+        for i, ec in enumerate(event_clusters):
+            ec.cluster_id = i
         logger.info(
             f"Remapped {n_remapped} occurrence refs in event clusters "
-            f"(final ID space)"
+            f"(final ID space), dropped {n_dropped} stale refs, "
+            f"removed {n_before - len(event_clusters)} empty clusters"
         )
 
         # Update type_ranking on clusters using final occurrences' type_scores
