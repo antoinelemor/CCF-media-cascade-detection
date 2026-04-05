@@ -22,6 +22,10 @@ from cascade_detector.analysis.stabsel_impact import (
     StabSelImpactAnalyzer,
     StabSelImpactResults,
 )
+from cascade_detector.analysis.stabsel_paradigm import (
+    StabSelParadigmAnalyzer,
+    StabSelParadigmResults,
+)
 from cascade_detector.analysis.unified_impact import (  # backward compat
     UnifiedImpactAnalyzer,
     UnifiedImpactResults,
@@ -32,5 +36,6 @@ from cascade_detector.core.models import CascadeAttribution
 __all__ = ['EventOccurrenceDetector',
            'ParadigmShiftAnalyzer', 'EpisodeAnalyzer', 'ShiftEpisode',
            'StabSelImpactAnalyzer', 'StabSelImpactResults',
+           'StabSelParadigmAnalyzer', 'StabSelParadigmResults',
            'UnifiedImpactAnalyzer', 'UnifiedImpactResults',  # backward compat
            'CascadeAttribution']

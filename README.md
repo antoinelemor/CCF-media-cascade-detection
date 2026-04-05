@@ -27,7 +27,7 @@ The framework distinguishes cascades from routine coverage spikes by requiring a
 
 ### Pipeline
 
-The `CascadeDetectionPipeline` executes seven sequential steps:
+The `CascadeDetectionPipeline` executes eight sequential steps:
 
 ```
 PostgreSQL (9.2M sentences, 77 columns)
@@ -82,9 +82,19 @@ Step 5: STABILITY SELECTION IMPACT ANALYSIS (cluster → cascade)
     Role classification → driver / suppressor / neutral (α=0.10)
     │
     ▼
+Step 5b: STABSEL PARADIGM IMPACT ANALYSIS (cluster/cascade → paradigm dominance)
+    StabSelParadigmAnalyzer → two complementary models
+    Model A: Event Cluster → Paradigm Dominance (triple-weighted treatment with frame centroid)
+    Model B: Cascade → Paradigm Dominance (daily composite signal as treatment)
+    AR(p) controls (BIC-selected), HAC Newey-West inference, temporal CV (3-fold expanding-window)
+    Per-pair roles: catalyst/disruptor/inert (A), amplification/destabilisation/dormant (B)
+    Global alignment: cos(β_vec, paradigm_vec) → reinforcer / challenger / neutral
+    │
+    ▼
 RESULTS
     DetectionResults → JSON, Parquet, DataFrame exports
-    EventClusters, EventOccurrences, CascadeAttributions, StabSelImpactResults
+    EventClusters, EventOccurrences, CascadeAttributions, StabSelImpactResults,
+    StabSelParadigmResults (cluster_dominance, cascade_dominance, alignment, validation)
 ```
 
 ### Step 3 — Detection: five daily anomaly signals
@@ -216,12 +226,63 @@ The cascade centroid is built from the cascade's own central articles (top-quart
 
 **Output**: `StabSelImpactResults` with a `cluster_cascade` DataFrame (one row per significant cluster-cascade pair), per-frame summary, and detailed `cascade_results` dict for diagnostic plots.
 
+### Step 5b — Paradigm impact analysis (stability selection v2)
+
+The `StabSelParadigmAnalyzer` (`analysis/stabsel_paradigm.py`) measures how event clusters and media cascades affect paradigm dominance — i.e., the composition of dominant frames over time. It extends the Phase 1 analysis (Section 10, cluster → cascade) to the paradigm level using two complementary models.
+
+**Two models**:
+
+| Model | Dependent variable | Treatment variable | Interpretation |
+|-------|-------------------|-------------------|----------------|
+| **Model A** | Paradigm dominance index for frame $f$ | Triple-weighted lagged mass $D_j(t,l)$ per event cluster | Which events catalyze or disrupt paradigm dominance? |
+| **Model B** | Paradigm dominance index for frame $f$ | Daily composite signal per cascade | Which cascades amplify or destabilize paradigm structure? |
+
+Both models are fit for each of the 8 frames, yielding up to 16 regressions per year.
+
+**Key methodological differences from Phase 1**:
+
+| Aspect | Phase 1 (cluster → cascade) | Step 5b (cluster/cascade → paradigm) |
+|--------|----------------------------|--------------------------------------|
+| Dependent variable | Two-sided composite Z-score signal | Paradigm dominance index (from CCF-paradigm) |
+| Max lag | 3 days | 7 days |
+| AR controls | None | AR(p) forced into model (BIC-selected, p ∈ [1, 5]) |
+| Inference | Residual bootstrap only | HAC Newey-West (primary) + residual bootstrap (secondary) |
+| Validation | None | Expanding-window temporal CV (3 folds) + 70/30 train/test |
+| Global alignment | None | cos(β_vec, paradigm_vec) → reinforcer/challenger/neutral |
+
+**Treatment variable (Model A)**:
+
+$$D_j(t, l) = \sum_{a \in \text{articles}(t-l)} \text{belonging}(a,j) \times \text{frame\_signal}(a) \times \cos\bigl(\text{emb}(a),\; \hat{c}_{\text{frame}}\bigr)$$
+
+where $\hat{c}_{\text{frame}}$ is built from the top-quartile paradigm dominance days (articles active when the target frame is most dominant), weighted by frame signal.
+
+**Per-pair role classification (α = 0.10)**:
+
+| Model | Role | Condition |
+|-------|------|-----------|
+| A | **catalyst** | β > 0, p < 0.10 — event cluster promotes frame dominance |
+| A | **disruptor** | β < 0, p < 0.10 — event cluster diminishes frame dominance |
+| A | **inert** | p ≥ 0.10 |
+| B | **amplification** | Own-frame cascade, β > 0, p < 0.10 |
+| B | **destabilisation** | Cross-frame cascade or own-frame with β < 0, p < 0.10 |
+| B | **dormant** | p ≥ 0.10 |
+
+**Global paradigm alignment**: For clusters/cascades significant on multiple frames, the coefficient vector β_vec across 8 frames is compared to the paradigm state vector P_vec at peak date via cosine similarity:
+
+| Global role | Condition | Interpretation |
+|-------------|-----------|----------------|
+| **reinforcer** | cos(β, P) > 0.1 | Pushes in the direction of the current paradigm |
+| **challenger** | cos(β, P) < −0.1 | Pushes against the current paradigm |
+| **neutral** | |cos(β, P)| ≤ 0.1 | No clear directional effect |
+
+**Output**: `StabSelParadigmResults` with `cluster_dominance` (Model A DataFrame), `cascade_dominance` (Model B DataFrame), `alignment_a` / `alignment_b` (global role tables), `validation` (R² summary), `summary` (per-frame statistics), and `raw_results` (for diagnostic plots).
+
 ## Project structure
 
 ```
 cascade_detector/
 ├── __init__.py                          # Public API
-├── pipeline.py                          # CascadeDetectionPipeline orchestrator (7 steps)
+├── pipeline.py                          # CascadeDetectionPipeline orchestrator (8 steps)
 ├── core/
 │   ├── config.py                        # DetectorConfig (all parameters)
 │   ├── constants.py                     # Frames, messengers, events, thresholds, event cluster constants
@@ -248,6 +309,7 @@ cascade_detector/
 │   ├── __init__.py                      # Analysis module
 │   ├── event_occurrence.py              # EventOccurrenceDetector (database-first event detection)
 │   ├── stabsel_impact.py               # StabSelImpactAnalyzer (stability selection impact)
+│   ├── stabsel_paradigm.py            # StabSelParadigmAnalyzer (paradigm dominance impact)
 │   ├── unified_impact.py               # UnifiedImpactAnalyzer (legacy, backward compat)
 │   ├── impact_analysis.py               # EventImpactAnalyzer (legacy, backward compat)
 │   └── paradigm_shift.py               # ParadigmShiftAnalyzer (shift + episode detection)
@@ -294,11 +356,12 @@ scripts/
 
 tests/
 ├── conftest.py                          # MockEmbeddingStore + ClusterableMockEmbeddingStore
-├── test_signal_builder.py               # 14 unit tests (signal computation + orthogonalization)
-├── test_unified_detector.py             # 23 unit tests (detection + scoring + semantic peak)
+├── test_signal_builder.py               # 18 unit tests (signal computation + orthogonalization)
+├── test_unified_detector.py             # 38 unit tests (detection + scoring + semantic peak)
 ├── test_event_impact.py                 # 9 unit tests (legacy impact analysis)
-├── test_unified_impact.py               # 68 unit tests (legacy 3-phase causal impact, backward compat)
-├── test_event_occurrence.py             # 128 unit tests (event detection, clustering, attribution)
+├── test_unified_impact.py               # 108 unit tests (legacy 3-phase causal impact, backward compat)
+├── test_event_occurrence.py             # 132 unit tests (event detection, clustering, attribution)
+├── test_stabsel_paradigm.py            # 48 unit tests (AR/HAC/CV + roles + alignment + integration)
 └── test_paradigm_shift.py              # 48 unit tests (paradigm shift detection + three-role attribution)
 ```
 
@@ -318,6 +381,7 @@ pip install -r requirements.txt
 
 ```
 numpy, pandas, scipy, tqdm, pyarrow        # Core
+statsmodels                                # Econometrics (HAC inference, AR models)
 psycopg2-binary, sqlalchemy                # Database
 networkx, networkit, python-louvain        # Network analysis
 sentence-transformers, torch               # Embeddings (optional, for computing embeddings)
@@ -360,6 +424,13 @@ for frame, crs in impact.cascade_results.items():
     for cr in crs:
         print(f"  {cr.cascade_id}: R²={cr.r2:.3f}, {cr.n_drivers}D {cr.n_suppressors}S")
 
+# StabSel paradigm impact (included automatically after paradigm shifts)
+paradigm = results.paradigm_impact  # StabSelParadigmResults
+print(paradigm.cluster_dominance.head())  # Model A: cluster → paradigm dominance
+print(paradigm.cascade_dominance.head())  # Model B: cascade → paradigm dominance
+print(paradigm.alignment_a.head())        # Global roles: reinforcer/challenger/neutral
+print(paradigm.validation)                # R² summary per model × frame
+
 # Paradigm shift analysis (included automatically)
 ps = results.paradigm_shifts
 print(ps.summary())
@@ -400,7 +471,16 @@ results/production/
     ├── signals/             # Per-frame daily Z-scores
     ├── indices/             # Temporal, frame, emotion, source, geographic
     ├── convergence/         # Semantic convergence, syndication stats
-    ├── impact_analysis/     # StabSel impact analysis (cluster → cascade)
+    ├── impact_analysis/     # StabSel impact analysis (cluster → cascade + paradigm)
+    │   ├── cluster_cascade.parquet          # StabSel Phase 1 (cluster → cascade)
+    │   ├── summary.json
+    │   ├── stabsel_cluster_dominance.parquet  # StabSel paradigm Model A (cluster → dominance)
+    │   ├── stabsel_cascade_dominance.parquet  # StabSel paradigm Model B (cascade → dominance)
+    │   ├── stabsel_alignment_a.parquet        # Global cluster roles (reinforcer/challenger/neutral)
+    │   ├── stabsel_alignment_b.parquet        # Global cascade roles (reinforcer/challenger/neutral)
+    │   ├── stabsel_validation.parquet         # R² summary per model × frame
+    │   ├── stabsel_paradigm_summary.json      # Per-frame statistics
+    │   └── stabsel_paradigm_results.pkl       # Raw results for diagnostic plots
     ├── event_occurrences/   # Event detection results
     │   ├── occurrences.json     # All event occurrences with belonging scores
     │   ├── clusters.json        # EventClusters (multi-type meta-events)

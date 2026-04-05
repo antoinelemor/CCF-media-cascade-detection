@@ -1,6 +1,6 @@
 # CCF Media Cascade Detection Framework — Scientific Documentation
 
-**Version 0.6.0 — February 2026**
+**Version 0.7.0 — April 2026**
 **Author: Antoine Lemor**
 
 ---
@@ -16,11 +16,12 @@
 7. [Network Construction and Metrics](#7-network-construction-and-metrics)
 8. [Classification and Output](#8-classification-and-output)
 9. [Event Occurrence Detection](#9-event-occurrence-detection)
-10. [Unified Impact Analysis](#10-unified-impact-analysis)
+10. [Stability Selection Impact Analysis](#10-stability-selection-impact-analysis)
 11. [Paradigm Shift Detection and Dynamics Qualification](#11-paradigm-shift-detection-and-dynamics-qualification)
-12. [Production Pipeline](#12-production-pipeline)
-13. [Configuration Reference](#13-configuration-reference)
-14. [Testing Strategy](#14-testing-strategy)
+12. [Stability Selection Paradigm Impact Analysis](#12-stability-selection-paradigm-impact-analysis)
+13. [Production Pipeline](#13-production-pipeline)
+14. [Configuration Reference](#14-configuration-reference)
+15. [Testing Strategy](#15-testing-strategy)
 
 **Appendices**
 - [A. Summary Table of All Sub-Indices](#appendix-a-summary-table-of-all-sub-indices)
@@ -31,6 +32,7 @@
 - [F. StabSel Impact Analysis Output Schema](#appendix-f-stabsel-impact-analysis-output-schema)
 - [G. Paradigm Shift Output Schema](#appendix-g-paradigm-shift-output-schema)
 - [H. Event Occurrence Constants Reference](#appendix-h-event-occurrence-constants-reference)
+- [I. StabSel Paradigm Impact Output Schema](#appendix-i-stabsel-paradigm-impact-output-schema)
 
 ---
 
@@ -1662,7 +1664,7 @@ These profiles characterize *what kind of content* the cluster carries, enabling
 The stability selection impact analysis is integrated as **Step 5** of the `CascadeDetectionPipeline`, after paradigm shift analysis (Step 4):
 
 ```
-Step 1: LOAD & PROCESS → Step 2: BUILD INDICES → Step 3: DETECT & SCORE → Step 3.5/3.6: EVENTS → Step 4: PARADIGM SHIFTS → Step 5: STABSEL IMPACT → RESULTS
+Step 1: LOAD & PROCESS → Step 2: BUILD INDICES → Step 3: DETECT & SCORE → Step 3.5/3.6: EVENTS → Step 4: PARADIGM SHIFTS → Step 5: STABSEL IMPACT → Step 5b: STABSEL PARADIGM → RESULTS
 ```
 
 The pipeline instantiates `StabSelImpactAnalyzer(embedding_store)` and calls `analyzer.run(results)`. The embedding store is required for computing cascade centroids and cosine similarities. The output `StabSelImpactResults` is stored in `results.event_impact`.
@@ -2017,9 +2019,239 @@ ParadigmShiftResults
 
 ---
 
-## 12. Production Pipeline
+## 12. Stability Selection Paradigm Impact Analysis
 
-### 12.1 Production Script
+### 12.1 Motivation
+
+The stability selection impact analysis (Section 10) measures how event clusters drive or suppress individual cascades. But the highest-order question remains: **do events and cascades actually change the dominant framing of climate change?**
+
+The `StabSelParadigmAnalyzer` (`analysis/stabsel_paradigm.py`) addresses this by modeling the effect of event clusters and cascades on **paradigm dominance** — the composition of dominant frames computed by the CCF-paradigm 4-method consensus (Section 11). Two complementary models answer distinct questions:
+
+- **Model A** (Event Cluster → Paradigm): Which real-world events catalyze or disrupt the dominance of specific frames?
+- **Model B** (Cascade → Paradigm): Which media cascades amplify or destabilize the paradigm structure?
+
+This completes the full causal chain:
+
+```
+Events → Cascades → Paradigm Shifts → Durable or Ephemeral Change
+       (Section 10)  (Section 12)       (Section 11)
+```
+
+### 12.2 Dependent Variable: Paradigm Dominance Index
+
+For each of the 8 frames, the dependent variable $y_f(t)$ is the daily paradigm dominance index computed by the CCF-paradigm library's 4-method consensus:
+
+$$
+y_f(t) = \texttt{paradigm\_timeline}[t][\texttt{paradigm\_}f]
+$$
+
+This is a continuous [0, 1] value measuring the strength of frame $f$ in the dominant frame composition at time $t$. Higher values indicate stronger dominance.
+
+### 12.3 AR Controls: BIC-Selected Autoregressive Terms
+
+Unlike Phase 1 (Section 10), where treatment effects are measured against a rolling Z-score baseline, paradigm dominance series exhibit strong autocorrelation (the dominant frame composition changes slowly). Without controls, treatment effects would be confounded with temporal dependence.
+
+The paradigm model forces AR($p$) terms into every regression:
+
+$$
+y_f(t) = \mu + \sum_{k=1}^{p} \phi_k \cdot y_f(t-k) + \gamma \cdot t + \sum_j \sum_{l=0}^{7} \beta_{j,l} \cdot D_j(t-l) + \varepsilon_t
+$$
+
+where AR order $p$ is selected by BIC on a pure AR($p$) + trend model (no treatment terms), testing $p \in \{1, 2, 3, 4, 5\}$:
+
+$$
+\text{BIC}(p) = n \cdot \ln(\hat{\sigma}^2_p) + (p + 2) \cdot \ln(n)
+$$
+
+The AR terms absorb autocorrelation so that treatment coefficients $\beta_{j,l}$ capture genuine causal effects above and beyond temporal persistence. These controls are **forced into the model** — they are not subject to stability selection.
+
+### 12.4 Treatment Variable: Triple-Weighted Lagged Mass (Model A)
+
+For each event cluster $j$, the treatment variable captures the cluster's temporal footprint weighted by its relevance to frame dominance:
+
+$$
+D_j(t, l) = \sum_{a \in \text{articles}(t-l)} \underbrace{\text{belonging}(a, j)}_{\text{membership}} \times \underbrace{\text{frame\_signal}(a)}_{\text{frame relevance}} \times \underbrace{\cos\bigl(\text{emb}(a),\; \hat{c}_f\bigr)}_{\text{semantic alignment}}
+$$
+
+where:
+- $\text{belonging}(a, j) \in [0, 1]$ is the soft membership score from Phase 4 assignment
+- $\text{frame\_signal}(a)$ is the article's frame column value (e.g., `economic_frame_mean`)
+- $\hat{c}_f$ is the **frame centroid** — the L2-normalized, signal-weighted mean of article embeddings from the top-quartile paradigm dominance days for frame $f$
+- $l \in \{0, 1, \ldots, 7\}$ are lag days (`MAX_LAG_PARADIGM = 7`)
+
+**Frame centroid construction** (`build_frame_centroid()`):
+
+1. Identify days where `paradigm_f` ≥ 75th percentile (top-quartile dominance)
+2. Select articles published on those days with positive frame signal
+3. Take the top-quartile by frame signal strength
+4. Build signal-weighted mean of their embeddings, L2-normalized
+
+This centroid represents *what discourse looks like when frame $f$ dominates*. Articles semantically close to this centroid are most relevant for explaining frame dominance.
+
+**Minimum treatment threshold**: Clusters with $\sum_t D_j(t, 0) < 0.01$ (`MIN_D_SUM`) are excluded.
+
+### 12.5 Treatment Variable: Daily Composite (Model B)
+
+For each cascade, the treatment variable is simply the daily composite signal (the detection composite from Section 5.7):
+
+$$
+D_c(t, l) = \text{daily\_composite}_c(t - l)
+$$
+
+The composite captures the cascade's multi-signal intensity over time, lagged at $l \in \{0, 1, \ldots, 7\}$.
+
+### 12.6 Variable Selection: Stability Selection
+
+Same algorithm as Phase 1 (Section 10.5), applied to the AR-augmented design matrix:
+
+1. **Design matrix**: $[\text{trend} \mid \text{AR}(p) \mid D_1(t,0) \cdots D_K(t,7)]$
+2. **Protection**: AR terms and trend are marked as controls — they are always included in the OLS but never subject to stability selection
+3. **Calibration**: ElasticNetCV on the full scaled matrix → $\hat{\alpha}_{\text{base}}$
+4. **Sub-sampling**: $B = 100$ iterations, 50% sub-samples, record treatment columns with $|\beta| > 10^{-10}$
+5. **Selection**: Treatment column $j$ is stable if selection frequency $\hat{\pi}_j \geq 0.60$
+
+### 12.7 Post-Selection Inference: HAC Newey-West + Residual Bootstrap
+
+The OLS post-selection step uses **HAC (Heteroskedasticity and Autocorrelation Consistent) standard errors** as the primary inference method, with residual bootstrap as a secondary check:
+
+**HAC Newey-West** (via `statsmodels.OLS(y, X).fit(cov_type='HAC', cov_kwds={'maxlags': None})`):
+
+$$
+\hat{V}_{\text{HAC}} = \text{Newey-West covariance matrix}
+$$
+
+For each cluster $j$ with stable columns at lags $\{l_1, l_2, \ldots\}$, the **net effect** is:
+
+$$
+\hat{\beta}_j^{\text{net}} = \sum_{l \in \text{stable}} \hat{\beta}_{j,l}
+$$
+
+**Wald test** for the net effect:
+
+$$
+t = \frac{\hat{\beta}_j^{\text{net}}}{\sqrt{R \cdot \hat{V}_{\text{HAC}} \cdot R^\top}}, \quad R = [0, \ldots, 0, 1, \ldots, 1, 0, \ldots, 0]
+$$
+
+where $R$ selects the columns belonging to cluster $j$. The p-value is one-tailed (in the direction of $\hat{\beta}_j^{\text{net}}$) using a $t$-distribution with $n - p$ degrees of freedom.
+
+**Residual bootstrap** (secondary, $B = 500$): Same algorithm as Section 10.6. The HAC p-value (`p_value_hac`) is used as the primary decision criterion; the bootstrap p-value (`p_value_boot`) is recorded for comparison.
+
+### 12.8 Validation: Temporal Cross-Validation and Train/Test Split
+
+Two complementary validation schemes assess out-of-sample predictive power:
+
+**Expanding-window temporal cross-validation** (3 folds):
+
+1. Divide the time series into 4 equal segments
+2. Fold $k$: train on segments $[0, k+1]$, test on segment $k+2$
+3. On each fold: run honest stability selection on the training set, fit OLS on stable variables, predict on test set
+4. Report $R^2_{\text{cv}}$ = mean of fold-level $R^2$ values
+
+**Single train/test split** (70/30):
+
+1. Train on the first 70% of the time series
+2. Run stability selection on the training set
+3. Fit OLS on stable variables, predict on the held-out 30%
+4. Report $R^2_{\text{train}}$ and $R^2_{\text{test}}$
+
+Both schemes respect temporal ordering — no future data leaks into training. A positive $R^2_{\text{cv}}$ confirms that the selected variables have genuine predictive power beyond what AR terms alone provide.
+
+### 12.9 Per-Pair Role Classification
+
+Each cluster or cascade retained by stability selection is classified based on the sign of its net coefficient and the HAC p-value:
+
+**Model A** (cluster → paradigm):
+
+| Role | Condition | Interpretation |
+|------|-----------|----------------|
+| **catalyst** | $\hat{\beta}_j^{\text{net}} > 0$ and $p < 0.10$ | Event cluster promotes frame dominance |
+| **disruptor** | $\hat{\beta}_j^{\text{net}} < 0$ and $p < 0.10$ | Event cluster diminishes frame dominance |
+| **inert** | $p \geq 0.10$ | Stable selection but not significant |
+
+**Model B** (cascade → paradigm):
+
+| Role | Condition | Interpretation |
+|------|-----------|----------------|
+| **amplification** | Own-frame cascade, $\hat{\beta} > 0$, $p < 0.10$ | Cascade amplifies its own frame's dominance |
+| **destabilisation** | Cross-frame or own-frame $\hat{\beta} < 0$, $p < 0.10$ | Cascade destabilizes paradigm structure |
+| **dormant** | $p \geq 0.10$ | No significant paradigm effect |
+
+### 12.10 Global Paradigm Alignment
+
+For clusters/cascades that are significant across multiple frames, a **global role** is computed by comparing the full coefficient vector to the paradigm state vector at the entity's peak date:
+
+$$
+\text{alignment} = \cos(\hat{\boldsymbol{\beta}}, \mathbf{P}_{\text{peak}}) = \frac{\hat{\boldsymbol{\beta}} \cdot \mathbf{P}_{\text{peak}}}{\|\hat{\boldsymbol{\beta}}\| \cdot \|\mathbf{P}_{\text{peak}}\|}
+$$
+
+where $\hat{\boldsymbol{\beta}} = [\hat{\beta}_{\text{Cult}}, \hat{\beta}_{\text{Eco}}, \ldots, \hat{\beta}_{\text{Secu}}]$ is the 8-dimensional coefficient vector (net betas across all frames where significant) and $\mathbf{P}_{\text{peak}} = [\texttt{paradigm\_Cult}, \ldots, \texttt{paradigm\_Secu}]$ is the paradigm state at the entity's peak date.
+
+| Global role | Condition | Interpretation |
+|-------------|-----------|----------------|
+| **reinforcer** | $\cos(\hat{\boldsymbol{\beta}}, \mathbf{P}) > 0.1$ | Pushes in the direction of the current paradigm |
+| **challenger** | $\cos(\hat{\boldsymbol{\beta}}, \mathbf{P}) < -0.1$ | Pushes against the current paradigm |
+| **neutral** | $|\cos(\hat{\boldsymbol{\beta}}, \mathbf{P})| \leq 0.1$ | No clear directional alignment |
+
+**Impact magnitude**: $\|\hat{\boldsymbol{\beta}}\| \times w_{\text{source}}$, where $w_{\text{source}}$ is the cluster strength (Model A) or cascade total score (Model B).
+
+**Shift contribution**: $\sum_f |\hat{\beta}_f| \times |\Delta \texttt{paradigm\_}f(\text{peak} \pm 7d)|$, measuring how much of the observed paradigm change around the entity's peak is attributable to its coefficients.
+
+### 12.11 Constants Reference
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MAX_LAG_PARADIGM` | 7 | Maximum lag days for treatment variable (1 week) |
+| `MAX_AR_ORDER` | 5 | Maximum AR order tested by BIC |
+| `MIN_D_SUM` | 0.01 | Minimum treatment mass for inclusion |
+| `FRAME_CENTROID_QUANTILE` | 0.75 | Top-quartile paradigm days for centroid |
+| `ALPHA_SIG` | 0.10 | Significance threshold for role classification |
+| `N_BOOTSTRAP` | 500 | Residual bootstrap replications |
+| `TRAIN_FRAC` | 0.70 | Train/test split fraction |
+| `N_CV_FOLDS` | 3 | Expanding-window CV folds |
+
+Stability selection parameters are shared with Phase 1 (Section 10.5): $B = 100$, `SUBSAMPLE_FRAC` = 0.50, `PI_THRESHOLD` = 0.60.
+
+### 12.12 Pipeline Integration
+
+The paradigm impact analysis is integrated as **Step 5b** of the pipeline, after Step 5 (Phase 1 impact) and conditional on Step 4 (paradigm shifts):
+
+```
+Step 5: STABSEL IMPACT → Step 5b: STABSEL PARADIGM → RESULTS
+```
+
+The pipeline wraps Step 5b in a try/except block — failure does not abort the pipeline. If `results.paradigm_shifts` is `None`, Step 5b is skipped entirely.
+
+**Source**: `cascade_detector/analysis/stabsel_paradigm.py` — `StabSelParadigmAnalyzer` class + `StabSelParadigmResults` dataclass.
+
+**Dependencies**: `numpy`, `pandas`, `scipy.stats` (t-distribution), `statsmodels` (OLS + HAC Newey-West), `scikit-learn` (via `stability_selection()` from `stabsel_impact.py`).
+
+### 12.13 Output Structure
+
+`StabSelParadigmResults` contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cluster_dominance` | DataFrame | Model A: one row per (cluster, frame) pair with β, p-values, role |
+| `cascade_dominance` | DataFrame | Model B: one row per (cascade, target_frame) pair |
+| `alignment_a` | DataFrame | Model A: global roles per cluster (reinforcer/challenger/neutral) |
+| `alignment_b` | DataFrame | Model B: global roles per cascade |
+| `validation` | DataFrame | R² summary per model × frame (R²_full, R²_test, R²_cv) |
+| `summary` | Dict | Per-model, per-frame statistics (n_clusters, n_stable, n_significant, roles, R²) |
+| `raw_results` | Dict | Full model results for pickle export and diagnostic plots |
+
+### 12.14 Theoretical Justification for AR Controls and HAC Inference
+
+**Why AR controls?** Paradigm dominance is a slow-moving state variable: once a frame becomes dominant, it tends to remain dominant for weeks or months. A regression of $y_f(t)$ on treatment variables $D_j(t)$ without controlling for $y_f(t-1)$ would attribute the persistence of dominance to concurrent treatment, inflating coefficients. The AR(p) terms absorb this persistence, ensuring that $\hat{\beta}_j$ captures the *additional* effect of the treatment beyond what the recent history already predicts.
+
+**Why HAC inference?** Even after AR controls, the residuals $\varepsilon_t$ may exhibit residual autocorrelation and heteroskedasticity. Standard OLS confidence intervals assume i.i.d. errors and would be too narrow. The Newey-West HAC estimator adjusts the covariance matrix for both autocorrelation (up to data-determined lag) and heteroskedasticity, producing valid p-values even when model assumptions are imperfect.
+
+**Why both HAC and bootstrap?** The HAC p-value is the primary decision criterion because it accounts for serial dependence. The bootstrap p-value serves as a robustness check: if the two p-values agree directionally, the inference is more credible. In practice, the HAC p-value tends to be conservative (larger) relative to bootstrap.
+
+---
+
+## 13. Production Pipeline
+
+### 13.1 Production Script
 
 **Source**: `scripts/run/run_production.py`
 
@@ -2045,7 +2277,7 @@ python scripts/run/run_production.py --skip-embeddings  # Skip embedding check
 
 5. **Embedding validation**: `ensure_embeddings()` verifies that pre-computed embeddings exist and cover ≥99% of database sentences before starting detection.
 
-### 12.2 Output Structure
+### 13.2 Output Structure
 
 ```
 results/production/
@@ -2084,9 +2316,16 @@ results/production/
     │   ├── semantic_convergence_full.json
     │   └── syndication_stats.json
     ├── impact_analysis/
-    │   ├── cluster_cascade.parquet     # StabSel: EventCluster → Cascade roles (driver/suppressor/neutral)
-    │   ├── stabsel_results.pkl         # Full StabSelCascadeResult objects for figures/resume
-    │   └── summary.json               # Per-frame role distributions and R² statistics
+    │   ├── cluster_cascade.parquet              # StabSel Phase 1: cluster → cascade roles
+    │   ├── stabsel_results.pkl                  # Phase 1 full results for figures/resume
+    │   ├── summary.json                         # Phase 1 per-frame statistics
+    │   ├── stabsel_cluster_dominance.parquet    # Paradigm Model A: cluster → dominance
+    │   ├── stabsel_cascade_dominance.parquet    # Paradigm Model B: cascade → dominance
+    │   ├── stabsel_alignment_a.parquet          # Paradigm: cluster global roles
+    │   ├── stabsel_alignment_b.parquet          # Paradigm: cascade global roles
+    │   ├── stabsel_validation.parquet           # Paradigm: R² per model × frame
+    │   ├── stabsel_paradigm_summary.json        # Paradigm: per-frame statistics
+    │   └── stabsel_paradigm_results.pkl         # Paradigm: raw results for figures
     └── paradigm_shifts/
         ├── shifts.json                     # All paradigm shifts with dynamics + attribution
         ├── episodes.json                   # Shift episodes with two-level qualification
@@ -2101,9 +2340,9 @@ results/production/
 
 ---
 
-## 13. Configuration Reference
+## 14. Configuration Reference
 
-### 13.1 DetectorConfig
+### 14.1 DetectorConfig
 
 All parameters are set via the `DetectorConfig` dataclass (`core/config.py`). Environment variables override defaults.
 
@@ -2170,7 +2409,7 @@ All parameters are set via the `DetectorConfig` dataclass (`core/config.py`). En
 | $h$ | $4.0 \times \sigma_C$ | Decision threshold |
 | $k$ | $0.5 \times \sigma_C$ | Slack variable |
 
-### 13.2 Weight Validation
+### 14.2 Weight Validation
 
 `DetectorConfig.validate()` asserts:
 1. Scoring dimension weights sum to 1.0 (± 0.01)
@@ -2181,11 +2420,11 @@ All parameters are set via the `DetectorConfig` dataclass (`core/config.py`). En
 
 ---
 
-## 14. Testing Strategy
+## 15. Testing Strategy
 
-### 14.1 Unit Tests (298 tests, 293 fast + 5 slow)
+### 15.1 Unit Tests (401 tests, 396 fast + 5 slow)
 
-**`tests/test_signal_builder.py`** — 14 tests covering:
+**`tests/test_signal_builder.py`** — 18 tests covering:
 - Signal builder API (returns all keys, handles missing frames, insufficient data)
 - Signal alignment (same DatetimeIndex, all non-negative)
 - Composite weighting (weighted sum matches manual computation)
@@ -2195,7 +2434,7 @@ All parameters are set via the `DetectorConfig` dataclass (`core/config.py`). En
 - Semantic signal present and non-negative; zero when doc_ids absent
 - Rolling Z-score clipped at zero; spikes produce high Z
 
-**`tests/test_unified_detector.py`** — 23 tests covering:
+**`tests/test_unified_detector.py`** — 38 tests covering:
 - API contracts (detect returns tuple, detect_all_frames iterates, requires embedding store)
 - Burst detection (detected in synthetic data, valid fields, no detection in flat series)
 - Cascade scoring (scores in [0, 1], sub-indices in [0, 1], total = weighted sum of dimensions, classification assigned)
@@ -2217,7 +2456,7 @@ All parameters are set via the `DetectorConfig` dataclass (`core/config.py`). En
 - Zero-occurrence event handled gracefully (rate = 0.0)
 - `run()` returns all 4 expected DataFrames with correct column schemas
 
-**`tests/test_unified_impact.py`** — 68 tests covering:
+**`tests/test_unified_impact.py`** — 108 tests covering:
 - Diff-in-diff: positive/zero/empty cases, signed output, pre/post window handling
 - Cross-correlation (dose-response): positive/negative lag detection, short series fallback, zero-variance handling
 - Granger causality: significant/insignificant detection, short series fallback, statsmodels dependency
@@ -2254,9 +2493,25 @@ All parameters are set via the `DetectorConfig` dataclass (`core/config.py`). En
 - EpisodeAnalyzer: single episode from close shifts, two episodes from distant shifts, episode reversibility/irreversibility, net structural change, max complexity, regime after duration, serialization, empty input
 - ParadigmShiftAnalyzer: end-to-end with no cascades, end-to-end with cascades, results serialization (incl. episodes), timeline frame columns, detection from mock DetectionResults
 
+**`tests/test_stabsel_paradigm.py`** — 48 tests covering:
+- AR order selection: BIC minimization, valid range [1, MAX_AR_ORDER], constant series handling, white noise preference, degenerate input
+- AR column construction: shape validation, lag value correctness, tall matrix handling, padding behavior
+- OLS v2 (HAC + bootstrap): returns both p-values, handles empty stable set, convergence to 0 for noise, beta sign correctness
+- Temporal cross-validation: fold count validation, segment size guard
+- Train/test evaluation: split fraction, small test set handling
+- Impact metrics: magnitude = ||β|| × w, shift contribution computation, zero-window handling, multi-frame contribution
+- Role classification (Model A): catalyst (β > 0, p < 0.10), disruptor (β < 0, p < 0.10), inert (p ≥ 0.10), mixed signs
+- Role classification (Model B): amplification (own-frame, β > 0), destabilisation (cross-frame), dormant (p ≥ 0.10), missing cascade
+- Results export: DataFrame A columns, DataFrame B columns, empty results handling
+- Cascade lagged matrix: shape, lag values, cascade exclusion for low mass
+- Alignment: reinforcer (cos > 0.1), challenger (cos < -0.1), neutral, empty DataFrame
+- Run model: empty treatment, result structure
+- Build summary: per-model per-frame statistics
+- Integration: full pipeline mock, missing paradigm_shifts raises ValueError, empty timeline raises ValueError, no clusters/cascades produces empty results
+
 **`tests/conftest.py`** provides `MockEmbeddingStore` and `ClusterableMockEmbeddingStore` with deterministic 64-dimensional embeddings seeded by doc_id hash for reproducible unit tests without requiring GPU or embedding files.
 
-### 14.2 Key Invariants Tested
+### 15.2 Key Invariants Tested
 
 1. Every burst produces a CascadeResult (no filtering gate — every burst is scored)
 2. All dimension scores ∈ [0, 1]
@@ -2625,3 +2880,115 @@ All constants are defined in `cascade_detector/core/constants.py`.
 | `EVENT_CLUSTER_MAX_GAP_DAYS` | 30 | Max peak gap for title-only connectivity |
 | `SEED_INCLUSION_THRESHOLD` | 0.80 | Min seed subset fraction for absorption |
 | `FRAGMENTATION_THRESHOLD` | 0.60 | Overlap threshold for consolidation |
+
+---
+
+## Appendix I: StabSel Paradigm Impact Output Schema
+
+### I.1 Cluster Dominance DataFrame (`stabsel_cluster_dominance.parquet`)
+
+One row per (cluster, frame) pair where the cluster was selected by stability selection.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `frame` | str | Target paradigm frame |
+| `cluster_id` | int | EventCluster identifier |
+| `net_beta` | float | Net OLS coefficient (sum across stable lags) |
+| `p_value_hac` | float | HAC Newey-West p-value (primary) |
+| `p_value_boot` | float | Residual bootstrap p-value (secondary) |
+| `role` | str | `catalyst`, `disruptor`, or `inert` |
+| `dominant_type` | str | Cluster dominant event type |
+| `event_types` | str | All event types (stringified list) |
+| `strength` | float | EventCluster strength score |
+| `D_sum` | float | Total treatment mass |
+| `peak_date` | str | Cluster peak date |
+| `ar_order` | int | AR order used for this frame's regression |
+| `r2_full` | float | Full-sample R² |
+| `r2_test` | float | 70/30 test R² |
+| `r2_cv` | float | Temporal CV mean R² |
+
+### I.2 Cascade Dominance DataFrame (`stabsel_cascade_dominance.parquet`)
+
+One row per (cascade, target_frame) pair.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `target_frame` | str | Target paradigm frame |
+| `cascade_id` | str | Cascade identifier |
+| `cascade_frame` | str | Cascade's own frame |
+| `net_beta` | float | Net OLS coefficient |
+| `p_value_hac` | float | HAC p-value (primary) |
+| `p_value_boot` | float | Bootstrap p-value (secondary) |
+| `role` | str | `amplification`, `destabilisation`, or `dormant` |
+| `ar_order` | int | AR order for this frame's regression |
+| `r2_full` | float | Full-sample R² |
+| `r2_test` | float | 70/30 test R² |
+| `r2_cv` | float | CV mean R² |
+
+### I.3 Alignment Tables (`stabsel_alignment_a.parquet`, `stabsel_alignment_b.parquet`)
+
+One row per cluster (Model A) or cascade (Model B) that is significant on at least one frame.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `cluster_id` / `cascade_id` | int/str | Entity identifier |
+| `n_sig_frames` | int | Number of frames where significant |
+| `beta_norm` | float | L2 norm of the 8-dimensional β vector |
+| `cos_alignment` | float | Cosine similarity with paradigm state at peak |
+| `global_role` | str | `reinforcer`, `challenger`, or `neutral` |
+| `impact_magnitude` | float | β_norm × source_weight |
+| `shift_contribution` | float | Σ|β_f| × |Δparadigm_f(peak ± 7d)| |
+| `sig_frames` | str | Significant frames with β values (e.g., "Eco(+0.15), Sci(-0.08)") |
+| `peak_date` | str | Entity peak date |
+
+Model A adds: `dominant_type`, `strength`. Model B adds: `cascade_frame`, `total_score`.
+
+### I.4 Validation DataFrame (`stabsel_validation.parquet`)
+
+One row per (model, frame) pair.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `model` | str | `A` or `B` |
+| `frame` | str | Frame abbreviation |
+| `ar_order` | int | BIC-selected AR order |
+| `n_entities` | int | Clusters (A) or cascades (B) with treatment mass |
+| `n_stable` | int | Entities passing stability selection |
+| `r2_full` | float | Full-sample R² |
+| `r2_train` | float | 70/30 training R² |
+| `r2_test` | float | 70/30 test R² |
+| `r2_cv` | float | Temporal CV mean R² |
+
+### I.5 Summary (`stabsel_paradigm_summary.json`)
+
+```json
+{
+  "model_a": {
+    "Eco": {
+      "n_clusters": 120,
+      "n_stable": 8,
+      "n_significant_hac": 5,
+      "n_catalyst": 3,
+      "n_disruptor": 2,
+      "ar_order": 3,
+      "r2_full": 0.87,
+      "r2_test": 0.72,
+      "r2_cv": 0.65
+    }
+  },
+  "model_b": {
+    "Eco": {
+      "n_cascades": 39,
+      "n_stable": 4,
+      "n_significant_hac": 2,
+      "n_amplification": 1,
+      "n_destabilisation": 1,
+      "ar_order": 3,
+      "r2_full": 0.91,
+      "r2_test": 0.78,
+      "r2_cv": 0.69
+    }
+  },
+  "global": {}
+}
+```

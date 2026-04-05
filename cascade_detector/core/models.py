@@ -389,6 +389,7 @@ class DetectionResults:
     detection_parameters: Dict[str, Any] = field(default_factory=dict)
     frame_signals: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     event_impact: Optional[Any] = None  # StabSelImpactResults
+    paradigm_impact: Optional[Any] = None  # StabSelParadigmResults
     event_clusters: List['EventCluster'] = field(default_factory=list)
     all_occurrences: List['EventOccurrence'] = field(default_factory=list)
     cascade_attributions: List['CascadeAttribution'] = field(default_factory=list)

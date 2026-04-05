@@ -222,6 +222,23 @@ class CascadeDetectionPipeline:
         impact_analyzer = StabSelImpactAnalyzer(self.detector.embedding_store)
         results.event_impact = impact_analyzer.run(results)
 
+        # Step 5b: StabSel paradigm impact analysis (cluster/cascade → paradigm dominance)
+        if results.paradigm_shifts is not None:
+            logger.info("Step 5b: StabSel paradigm impact analysis...")
+            from cascade_detector.analysis.stabsel_paradigm import StabSelParadigmAnalyzer
+            paradigm_analyzer = StabSelParadigmAnalyzer(self.detector.embedding_store)
+            try:
+                results.paradigm_impact = paradigm_analyzer.run(results)
+                n_a = len(results.paradigm_impact.cluster_dominance)
+                n_b = len(results.paradigm_impact.cascade_dominance)
+                logger.info(f"  Model A: {n_a} cluster-frame pairs, "
+                            f"Model B: {n_b} cascade-frame pairs")
+            except Exception as e:
+                logger.warning(f"  Paradigm impact analysis failed: {e}")
+                results.paradigm_impact = None
+        else:
+            logger.info("  Skipping paradigm impact (no paradigm_shifts)")
+
         logger.info(f"\n{results.summary()}")
 
         return results
