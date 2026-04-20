@@ -106,6 +106,9 @@ temp/
 *.tar.gz
 *.zip
 
+# Overleaf paper (separate git repo)
+paper/
+
 # Embeddings (large binary files)
 data/embeddings/
 data/embeddings-test/

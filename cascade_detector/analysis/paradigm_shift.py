@@ -1262,14 +1262,21 @@ class ParadigmShiftAnalyzer:
             gap_weeks=episode_gap_weeks,
         )
 
-    def analyze(self, results) -> ParadigmShiftResults:
+    def analyze(self, results, buffer_temporal=None) -> ParadigmShiftResults:
         """Analyze paradigm shifts from pipeline DetectionResults.
 
         Extracts weekly proportions from results._indices['temporal'],
         detects shifts, and attributes them to results.cascades.
 
+        If ``buffer_temporal`` is provided (temporal index for the 12 weeks
+        preceding the analysis period), the buffer weekly proportions are
+        prepended so the sliding window is warm from day 1.  The output
+        timeline and shifts are trimmed to the analysis period only.
+
         Args:
             results: DetectionResults with _indices attached.
+            buffer_temporal: Optional temporal index dict from prior period
+                (as returned by TemporalIndexer.build_index).
 
         Returns:
             ParadigmShiftResults.
@@ -1286,6 +1293,20 @@ class ParadigmShiftAnalyzer:
                 paradigm_timeline=pd.DataFrame(),
                 analysis_period=results.analysis_period,
             )
+
+        # Merge buffer data for warm-up if available
+        if buffer_temporal is not None:
+            buffer_props = self._extract_weekly_props_from_indices(buffer_temporal)
+            if buffer_props is not None and not buffer_props.empty:
+                n_buffer = len(buffer_props)
+                weekly_props = pd.concat([buffer_props, weekly_props])
+                weekly_props = weekly_props[~weekly_props.index.duplicated(keep='last')]
+                weekly_props = weekly_props.sort_index()
+                logger.info(
+                    f"  Paradigm buffer merged: {n_buffer} buffer weeks "
+                    f"+ {len(weekly_props) - n_buffer} target weeks "
+                    f"= {len(weekly_props)} total"
+                )
 
         return self._run_pipeline(
             weekly_props, results.cascades, results.analysis_period
@@ -1358,8 +1379,21 @@ class ParadigmShiftAnalyzer:
             f"{len(cascades)} cascades"
         )
 
-        # Step 1: Compute paradigm states
+        # Step 1: Compute paradigm states (uses full data incl. buffer)
         states = self.state_computer.compute_states(weekly_props)
+
+        # Trim states to analysis period (buffer was for warm-up only)
+        if analysis_period[0]:
+            period_start = pd.Timestamp(analysis_period[0])
+            n_before = len(states)
+            states = [s for s in states if s.date >= period_start]
+            n_trimmed = n_before - len(states)
+            if n_trimmed > 0:
+                logger.info(
+                    f"  Trimmed {n_trimmed} buffer states, "
+                    f"{len(states)} states in analysis period "
+                    f"(first: {states[0].date.date() if states else 'none'})"
+                )
 
         # Step 2: Build paradigm timeline
         timeline = self._build_timeline(states)

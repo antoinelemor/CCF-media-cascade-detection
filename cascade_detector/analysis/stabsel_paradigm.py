@@ -626,26 +626,34 @@ def classify_model_a_roles(ols_results):
 
 
 def classify_model_b_roles(ols_results, target_frame, cascades_by_id):
-    """Classify cascade roles: amplification/destabilisation/dormant (per frame pair)."""
+    """Classify cascade roles: catalyst/disruptor/inert (per frame pair).
+
+    Aligned with Model A taxonomy.  The ``is_own_frame`` flag allows
+    downstream code to derive the legacy labels:
+
+    - amplification  = catalyst  + is_own_frame
+    - auto-suppression = disruptor + is_own_frame
+    - catalysis      = catalyst  + not is_own_frame
+    - destabilisation = disruptor + not is_own_frame
+    - dormant        = inert
+
+    Returns:
+        Tuple[dict, dict]: (roles, own_frame_flags) keyed by cascade id.
+    """
     roles = {}
+    own_frame_flags = {}
     for cid, res in ols_results.get('cluster_results', {}).items():
         nb = res['net_beta']
         pv = res['p_value']
         cascade = cascades_by_id.get(cid)
-        if cascade is None:
-            roles[cid] = 'dormant'
-            continue
-        is_own_frame = (cascade.frame == target_frame)
+        is_own = (cascade.frame == target_frame) if cascade else False
+        own_frame_flags[cid] = is_own
 
-        if pv >= ALPHA_SIG:
-            roles[cid] = 'dormant'
-        elif is_own_frame and nb > 0:
-            roles[cid] = 'amplification'
-        elif (not is_own_frame and pv < ALPHA_SIG) or (is_own_frame and nb < 0):
-            roles[cid] = 'destabilisation'
+        if pv < ALPHA_SIG:
+            roles[cid] = 'catalyst' if nb > 0 else 'disruptor'
         else:
-            roles[cid] = 'dormant'
-    return roles
+            roles[cid] = 'inert'
+    return roles, own_frame_flags
 
 
 # ── Model runners ────────────────────────────────────────���───────────────────
@@ -713,9 +721,11 @@ def run_model(model_type, frame, y_full, X_treatment, lag_labels,
             if cluster_meta and cid in cluster_meta:
                 res.update(cluster_meta[cid])
     else:
-        roles = classify_model_b_roles(ols_results, frame, cascades_by_id)
+        roles, own_frame_flags = classify_model_b_roles(
+            ols_results, frame, cascades_by_id)
         for cid, res in ols_results['cluster_results'].items():
-            res['role'] = roles.get(cid, 'dormant')
+            res['role'] = roles.get(cid, 'inert')
+            res['is_own_frame'] = own_frame_flags.get(cid, False)
             cascade = cascades_by_id.get(cid) if cascades_by_id else None
             if cascade:
                 res['cascade_frame'] = cascade.frame
@@ -837,7 +847,8 @@ def results_to_dataframe_b(all_results):
                 'net_beta': cr['net_beta'],
                 'p_value_hac': cr.get('p_value_hac', np.nan),
                 'p_value_boot': cr.get('p_value_boot', np.nan),
-                'role': cr.get('role', 'dormant'),
+                'role': cr.get('role', 'inert'),
+                'is_own_frame': cr.get('is_own_frame', False),
                 'ar_order': res.get('ar_order', 0),
                 'r2_full': res.get('r2_full', 0.0),
                 'r2_test': res.get('r2_test', np.nan),
@@ -1114,8 +1125,8 @@ class StabSelParadigmAnalyzer:
                 'n_cascades': res['n_entities'],
                 'n_stable': res['n_stable'],
                 'n_significant_hac': n_sig,
-                'n_amplification': int((frame_df['role'] == 'amplification').sum()) if not frame_df.empty else 0,
-                'n_destabilisation': int((frame_df['role'] == 'destabilisation').sum()) if not frame_df.empty else 0,
+                'n_catalyst': int((frame_df['role'] == 'catalyst').sum()) if not frame_df.empty else 0,
+                'n_disruptor': int((frame_df['role'] == 'disruptor').sum()) if not frame_df.empty else 0,
                 'ar_order': res['ar_order'],
                 'r2_full': round(res['r2_full'], 4),
                 'r2_test': round(res['r2_test'], 4) if not np.isnan(res['r2_test']) else None,
