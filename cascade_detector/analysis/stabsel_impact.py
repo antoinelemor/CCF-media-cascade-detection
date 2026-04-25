@@ -536,9 +536,17 @@ def build_weighted_lagged_mass(clusters, articles, date_index, frame_col,
 # ── Stability Selection ──────────────────────────────────────────────────
 
 def stability_selection(y, X_with_trend, n_subsamples=N_SUBSAMPLES,
-                        subsample_frac=SUBSAMPLE_FRAC, pi_thr=PI_THRESHOLD):
+                        subsample_frac=SUBSAMPLE_FRAC, pi_thr=PI_THRESHOLD,
+                        n_controls=1):
+    """Stability Selection (Meinshausen & Bühlmann, 2010).
+
+    Args:
+        n_controls: Number of leading control columns in X_with_trend
+            that should be excluded from the selection mask. Default 1
+            (trend only) for backward compatibility with Phase 1.
+    """
     n, p_full = X_with_trend.shape
-    p = p_full - 1
+    p = p_full - n_controls
     n_sub = max(int(n * subsample_frac), 10)
 
     selection_counts = np.zeros(p)
@@ -567,7 +575,7 @@ def stability_selection(y, X_with_trend, n_subsamples=N_SUBSAMPLES,
             max_iter=10000, random_state=b,
         )
         enet.fit(X_sub_scaled, y_sub)
-        coefs = enet.coef_[1:]
+        coefs = enet.coef_[n_controls:]
         selected = np.abs(coefs) > 1e-10
         selection_counts += selected.astype(float)
 

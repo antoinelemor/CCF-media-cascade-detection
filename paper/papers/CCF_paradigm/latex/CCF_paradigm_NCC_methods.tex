@@ -1,0 +1,132 @@
+%TC:ignore
+\begingroup\sloppy
+\section*{Online Methods}
+
+\subsection*{Data}
+
+The Canadian Climate Framing (CCF) database\cite{lemorCCFDatabase2026} contains 266,271 climate-related articles from 20 Canadian newspapers (6 French-language, 14 English-language) published between 1978 and 2024. Each article is segmented into sentences (9.2 million total) and annotated at the sentence level by BERT-type classifiers trained on more than 4,000 manual annotations (macro-averaged $F_1 = 0.866$). The annotation schema comprises 65 hierarchical binary labels organised into eight interpretive frames (Political, Economic, Scientific, Environmental, Justice, Cultural, Health, Security), nine messenger types (official, scientist, economic, activist, cultural, health, social, legal, security), eight event types (weather, meeting, policy, publication, election, judiciary, cultural, protest), two solution types (mitigation, adaptation), and emotional tonality (positive, neutral, negative). Sentence-level embeddings (1,024 dimensions, BAAI/bge-m3) are precomputed for the full corpus and stored as a memory-mapped array (19.4~GB, float16). All analyses use sentence-level data aggregated to article-day resolution. The database is stored in PostgreSQL with native DATE columns.
+
+\subsection*{Paradigm dominance measurement}
+
+A frame's dominance is assessed through a composite score combining four equally weighted scoring methods (25\% each): (1)~information theory (mutual information, entropy reduction, information content), (2)~network analysis (PageRank, eigenvector centrality, and their stability on a frame co-occurrence graph), (3)~causality (Granger causality and transfer entropy across frame pairs), and (4)~proportional prominence (mean proportion, elevation above median, consistency, and percentile rank). Each method produces sub-metrics that are min-max normalised and averaged within method; the four method scores are then averaged with equal weight to produce a single dominance score per frame.
+
+A frame achieves dominant status when selected by at least three of four threshold methods: above-median, natural gradient break (maximum absolute gradient in the sorted score distribution), cumulative-variance elbow (maximum perpendicular distance from the cumulative distribution to the diagonal), and statistical significance (mean $+ 0.5\sigma$). Multiple frames can be dominant simultaneously. If no frame passes, the highest-scoring frame is retained; if more than six pass, the list is truncated to the top six by natural-break ordering.
+
+The analysis uses a rolling 12-week window at daily resolution (step = 1 day). Weekly frame proportions are interpolated to daily values, and each daily window position is resampled back to weekly resolution before analysis. A window is included only if it contains at least 11 complete weeks. Each window is analysed independently by the dominance analyser, executed in parallel across daily positions via \texttt{ProcessPoolExecutor}. The result is a paradigm timeline: a daily time series of paradigm states recording, for each day, the set of dominant frames, the paradigm type (mono-, dual-, triple-, or quad-paradigm), concentration, inter-frame coherence, and the eight frame-level dominance scores. A 14-week retrospective buffer provides paradigm warm-up when the analysis is run year by year, so that dominance states are available from the first day of each target period.
+
+\subsection*{Focusing event detection}
+
+Focusing events are detected through a five-phase pipeline that operates on all articles in the analysis period, independently of cascade detection.
+
+\textbf{Phase~1: seed selection.} For each of the eight event types $t$, a composite seed score is computed for every article: $s = 0.6 \times \bar{e}_t + 0.4 \times \bar{e}$, where $\bar{e}_t$ is the sentence-level mean of the binary event-type label and $\bar{e}$ is the mean across all event types. An article qualifies as a seed for type $t$ if $\bar{e}_t > 0$, if $\bar{e}_t \geq 0.5 \times \max_k \bar{e}_k$ (dominant-ratio filter), and if $s$ exceeds the 50th percentile of seed scores among qualifying articles.
+
+\textbf{Phase~2: per-type agglomerative clustering.} For each event type, seed articles are clustered using hierarchical agglomerative clustering (HAC) with average linkage on a three-dimensional compound distance:
+\begin{equation}
+d_{ij} = 0.50 \times d_{\text{sem}} + 0.30 \times d_{\text{temp}} + 0.20 \times d_{\text{ent}}
+\end{equation}
+The semantic distance $d_{\text{sem}}$ is the corpus-adjusted cosine distance: raw pairwise cosine similarity is transformed to $\tilde{s} = \max\bigl(0, (s - b)/(1-b)\bigr)$ where $b$ is the corpus-level mean pairwise similarity (computed once on a 1,000-article random sample), and $d_{\text{sem}} = 1 - \tilde{s}$. The temporal distance is $d_{\text{temp}} = 1 - \exp(-|\Delta t|/14)$ where $\Delta t$ is the date difference in days. The entity distance is $d_{\text{ent}} = 1 - J(E_i, E_j)$ where $J$ is the Jaccard similarity of named-entity sets, defaulting to 0.5 when both sets are empty.
+
+Article embeddings used for clustering are event-filtered: only sentences where the event-type label is active are mean-pooled, then blended with the title embedding (sentence~ID~0) at weight 0.30 (title) versus 0.70 (event-relevant phrases). All embeddings are L2-normalised before distance computation. The dendrogram is cut at distance threshold 0.30. Articles assigned to size-1 clusters are preserved as singleton micro-events.
+
+\textbf{Phase~3: multi-type merge.} Before further assignment, duplicate occurrences of the same real-world event detected across types are deduplicated: within each event type, occurrences whose seed article sets share Jaccard similarity $\geq 0.5$ are merged (greedy, highest-mass representative retained). The deduplicated occurrences are then clustered into multi-type event clusters via HAC with average linkage on a five-dimensional distance:
+\begin{equation}
+d_{AB} = 0.25 \times d_{\text{temp}} + 0.20 \times d_{\text{sem}} + 0.15 \times d_{\text{ent}} + 0.30 \times d_{\text{art}} + 0.10 \times d_{\text{type}}
+\end{equation}
+where $d_{\text{art}} = 1 - J(\text{seeds}_A, \text{seeds}_B)$ is the Jaccard distance on seed article sets, and $d_{\text{type}}$ is 0 (same type) or 1 (different type). The optimal number of clusters $k$ is selected by maximising silhouette score over all $k \in [2, n-1]$. If the best score is $\leq 0$, all occurrences are merged into a single cluster (if maximum pairwise distance $< 0.5$) or kept as singletons otherwise.
+
+A post-processing step splits disconnected components within each cluster. Two occurrences are connected if they share at least one seed article, or if the cosine similarity between their title-embedding centroids exceeds 0.50 and their peak dates are within 30 days. Breadth-first search identifies connected components; disconnected components become separate clusters. Each cluster's dominant event type is determined by a combined score: $0.50 \times$ structural contribution (mass-normalised, weighted by Jaccard connectivity) $+ 0.50 \times$ NLP score (mass-weighted mean of type validation scores across occurrences).
+
+\textbf{Phase~4: iterative article assignment.} All articles in the analysis period are assigned to all clusters via soft membership. A four-dimensional distance is computed between each article $i$ and each cluster $c$:
+\begin{equation}
+d_{ic} = 0.25 \times d_{\text{temp}} + 0.35 \times d_{\text{sem}} + 0.15 \times d_{\text{ent}} + 0.25 \times d_{\text{sig}}
+\end{equation}
+where $d_{\text{sig}} = 1 - \bar{e}_{t(c)}$ is the complement of the article's event-type signal for the cluster's dominant type. The semantic distance is computed via a single matrix multiplication of article embeddings against cluster centroids, followed by corpus-baseline adjustment. Entity distances use sparse CSR matrix multiplication. The membership score is $\beta_{ic} = \max(0, 1 - d_{ic}/\tau_c)$ where $\tau_c$ is a self-adjusting threshold per cluster. At iteration~0, $\tau_c = \min(0.5, \max(0.05, \text{median}(d_{\text{seeds}}) \times 2))$. At iteration~1, $\tau_c$ is recalibrated from the core of the cluster (articles with belonging $\geq$ 75th percentile of positive belongings): $\tau_c = \min(0.5, \max(0.05, \text{median}(d_{\text{core}}) \times 2))$. Two iterations are performed. Between iterations, cluster centroids are updated as belonging$\times$signal-weighted means of article embeddings, L2-normalised. Seed articles are unconditionally included regardless of belonging score.
+
+\textbf{Phase~5: confidence scoring.} Each occurrence receives a confidence score from five equally weighted components (0.20 each): centroid tightness (mean belonging of assigned articles), coherence residual $\max\bigl(0, (\bar{c} - b)/(1-b)\bigr)$ where $\bar{c}$ is the mean pairwise cosine similarity and $b$ the corpus baseline, media diversity $1 - 1/n_{\text{media}}$, recruitment success $\min\bigl(1, (n_{\text{total}}/n_{\text{seeds}} - 1)/2\bigr)$, and size adequacy $\min(1, m/10)$ where $m$ is the effective mass ($\sum \beta$). Occurrences with confidence $< 0.40$ are flagged as low-confidence. The pipeline produces 50,892 event clusters across 47 years.
+
+\textbf{Event--cascade attribution.} Occurrences are linked to cascades by temporal and article overlap. An attribution is created when the occurrence's core period (belonging-weighted 10th--90th date percentiles) overlaps with the cascade window and at least one article is shared.
+
+\subsection*{Cascade detection and scoring}
+
+Cascades are detected through a composite signal combining five daily Z-scores, scored on four dimensions, and classified by intensity.
+
+\textbf{Signal construction.} For each frame and each day, five anomaly signals are computed relative to a 90-day trailing baseline (shifted by one day to prevent lookahead). Each signal $s_t$ is converted to a one-sided Z-score: $z_t = \max\bigl(0, (s_t - \mu_t)/\sigma_t\bigr)$, where $\mu_t$ and $\sigma_t$ are the rolling mean and standard deviation (minimum 45 observations), with $\sigma_t$ floored at $\max(0.1 \times \sigma_{\text{global}}, 10^{-10})$.
+
+The five signals are: (1)~\emph{temporal anomaly}: daily frame proportion; (2)~\emph{participation anomaly}: number of unique journalists publishing with the frame; (3)~\emph{convergence anomaly}: frame dominance ratio (frame proportion divided by the sum across all eight frames), orthogonalised against the temporal signal by subtracting its OLS projection to remove their ${\sim}0.92$ correlation; (4)~\emph{source anomaly}: messenger concentration ($1 - H/H_{\max}$, where $H$ is the Shannon entropy of messenger-type counts); (5)~\emph{semantic anomaly}: mean pairwise cosine similarity of article embeddings for the frame on each day.
+
+The composite signal is the weighted sum: $C_t = 0.25\, z_{\text{temp}} + 0.20\, z_{\text{part}} + 0.20\, z_{\text{conv}} + 0.15\, z_{\text{source}} + 0.20\, z_{\text{sem}}$.
+
+\textbf{Burst detection.} Burst periods are identified from the composite signal through a six-step pipeline: (1)~PELT changepoint detection (RBF kernel, penalty~2.0, minimum segment~7 days) on 7-day smoothed composite, retaining segments whose mean exceeds the global mean $+ 0.3\sigma$; (2)~binomial proportion test ($p < 0.01$, Cohen's $h > 0.05$ or ratio $> 1.5\times$ baseline); (3)~fine PELT (penalty~1.0, smoothing~3 days) on rejected segments to recover sub-bursts; (4)~multi-scale sliding-window proportion tests (windows of 5, 7, 10, 14, 21, 28 days); (5)~union, merge (gap $\leq 1$ day), and re-validation; (6)~boundary extension (walk while 5-day smoothed proportion exceeds baseline, up to 7 days, tolerating 2 consecutive below-baseline days). Minimum burst duration is 3 days.
+
+\textbf{Cascade scoring.} Each burst is scored on four dimensions (0.25 each): temporal dynamics (burst intensity, adoption velocity, duration, Mann-Whitney $U$ significance), participation breadth (actor diversity via normalised Shannon entropy, cross-media ratio, new-entrant rate, growth pattern, network structure, network cohesion), content convergence (semantic similarity with syndication penalty $\times (1 - 0.5\, r_{\text{synd}})$, convergence trend, cross-media alignment, novelty decay), and source convergence (diversity decline between cascade halves, messenger concentration, media coordination via journalist-centroid cosine similarity). All sub-indices are normalised to $[0,1]$; the dimension score is the mean of its sub-indices.
+
+The co-coverage network is built with nodes as (journalist, media) pairs and edges connecting actors who published on the same day using the same frame (weight = number of co-occurrence days). Network structure is the normalised clustering ratio $\min(1, \bar{C}/(\rho \times 20))$ where $\bar{C}$ is the average clustering coefficient and $\rho$ the density (neutral 0.5 for networks with fewer than 5 nodes). Metrics are computed via NetworKit in a subprocess to avoid dual-OpenMP conflicts with PyTorch.
+
+Semantic convergence uses the embedding store after syndication deduplication (cosine similarity $> 0.95$). The convergence trend is the OLS slope of intra-window similarity across five equal temporal sub-windows. Cross-media alignment is the mean pairwise cosine similarity between outlet-level embedding centroids. Novelty decay is the negative OLS slope of incremental novelty ($1$ minus cosine similarity of each article to the running centroid of all preceding articles).
+
+The cascade's peak date is the embedding-weighted 50th percentile of article dates, where each article's weight is its frame signal times its cosine similarity to the cascade centroid. The total score is the weighted sum of dimension scores, multiplied by a media confidence factor $\min(1, \log_2 n_{\text{media}} / \log_2 10)$. Cascades are classified as strong ($\geq 0.65$), moderate ($\geq 0.40$), weak ($\geq 0.25$), or non-cascade ($< 0.25$). A hard filter requires at least 3 articles and at least 1 journalist.
+
+\subsection*{Causal analysis: stability selection with HAC inference}
+
+Causal relationships across the three orders are quantified using stability selection\cite{meinshausenStabilitySelection2010} with Newey-West HAC standard errors, organised in three layers.
+
+\textbf{Phase~1: event cluster to cascade.} The dependent variable $y_t$ is the five-signal composite (described above), restricted to a window of $\pm 30$ days around each cascade. For each event cluster $j$, a treatment variable $D_j(t)$ is constructed as a triple-weighted daily mass:
+\begin{equation}
+D_j(t) = \sum_{a:\, \text{date}(a)=t} \beta_{aj} \times f_a \times \max\bigl(\cos(\mathbf{e}_a, \mathbf{c}), 0\bigr)
+\end{equation}
+where $\beta_{aj}$ is the article's belonging to cluster $j$, $f_a$ is the article's frame signal, and $\cos(\mathbf{e}_a, \mathbf{c})$ is the cosine similarity between the article embedding and the cascade-specific centroid (built from the top quartile of frame-active articles within $\pm 14$ days of the cascade, signal-weighted, L2-normalised). The treatment matrix includes lags 0 through 3 days for each cluster. Clusters with total mass $\sum_t D_j(t) < 0.01$ are dropped.
+
+A deterministic linear trend is included as a control variable (not subject to stability selection). Stability selection is run with $B = 100$ half-samples (subsample fraction 0.5, without replacement), using ElasticNet with alpha calibrated by 5-fold cross-validation on the full data ($l_1$ ratios $\in \{0.7, 0.9, 0.95, 0.99\}$ when $p > n$, else $\{0.5, 0.7, 0.9, 0.95\}$; base alpha halved). A variable is declared stable if its selection frequency $\hat{\pi} \geq 0.60$.
+
+Post-selection OLS is performed on the stable variables. Per-cluster net effects are aggregated across surviving lags: $\hat{\beta}_j = \sum_{l \in \text{stable}} \hat{\beta}_{j,l}$. Inference uses residual bootstrap ($B = 500$): in each replicate, residuals are resampled with replacement, added to fitted values, and re-estimated via the pre-computed hat matrix. The one-tailed $p$-value is the fraction of bootstrap replicates with net effect in the opposite direction from $\hat{\beta}_j$. Clusters are classified as driver ($p < 0.10$, $\hat{\beta}_j > 0$), suppressor ($p < 0.10$, $\hat{\beta}_j < 0$), or neutral ($p \geq 0.10$).
+
+\textbf{Model~A: event cluster to paradigm.} The dependent variable $y_t$ is the daily paradigm dominance index of each target frame (from the paradigm timeline). The treatment variable $D_j(t)$ uses the same triple-weighting formula as Phase~1, but with a frame-level centroid instead of a cascade-specific one. The frame centroid is built from articles on high-dominance days (above the 75th percentile of the target frame's daily dominance index), using only frame-active articles, signal-weighted and L2-normalised. Lags span 0 through 7 days.
+
+Autoregressive controls AR($p^*$) are included to account for the persistence of paradigm dominance. The AR order $p^* \in [1, 5]$ is selected by minimising BIC over pure AR$+$trend models. AR terms are forced into every model (never subject to stability selection). The control block consists of the linear trend and the $p^*$ lagged values of $y_t$.
+
+Primary inference uses HAC Newey-West standard errors (automatic bandwidth) via statsmodels. A Wald test on the sum of per-lag coefficients for each cluster provides the HAC $p$-value (one-tailed in the direction of $\hat{\beta}_j$). Residual bootstrap ($B = 500$) provides a secondary $p$-value.
+
+Validation uses a 70/30 temporal train-test split and three-fold expanding-window cross-validation (fold size = $n/4$; each fold trains on all preceding data and tests on the next segment). Stability selection is re-run honestly on each training fold. Cross-validation is skipped if the fold size falls below 30 days. Each cluster--frame pair is classified as catalyst ($p_{\text{HAC}} < 0.10$, $\hat{\beta}_j > 0$), disruptor ($p_{\text{HAC}} < 0.10$, $\hat{\beta}_j < 0$), or inert ($p_{\text{HAC}} \geq 0.10$).
+
+\textbf{Model~B: cascade to paradigm.} The dependent variable and AR controls are identical to Model~A. The treatment variable is the cascade's daily composite score (the detection-stage composite signal restricted to the cascade window), with lags 0 through 7 days. Each cascade--frame pair is classified using the same taxonomy. An \texttt{is\_own\_frame} flag marks whether the cascade's frame matches the target frame, enabling the distinction between own-frame effects (auto-amplification, auto-suppression) and cross-frame effects (catalysis, disruption).
+
+\textbf{Triple chains.} A complete triple chain requires all three layers to be significant within the same year: an event cluster must be causally linked to a cascade (Phase~1), and the same cascade must be causally linked to a paradigm frame (Model~B). Each event type is mapped to a natural frame (weather to Environment, elections/meetings/policy/protest to Politics, publications to Science, judiciary to Justice, cultural to Culture). A chain is classified as displaced when the cascade frame differs from the event's natural frame. The pipeline yields 8,810 significant effects across the three layers.
+
+\subsection*{Figure methods}
+
+\textbf{Figure~1 (schema).} Conceptual diagram drawn programmatically. Three concentric circles represent the three orders (focusing event at centre, media cascade, paradigm dominance outermost). Arrows A and B show the cascade-mediated pathway (event $\to$ cascade $\to$ paradigm); arrow C shows the direct pathway (event $\to$ paradigm, dashed). Curved arrows on the outer ring indicate structural persistence forces. Generated by \texttt{gen\_figures.py}.
+
+\textbf{Figure~2 (paradigmatic structure).} Panel~(a): mean annual dominance index per frame (Gaussian-smoothed, $\sigma = 1.5$ years) with OLS linear trend lines for all frames; percentage changes and $R^2$ annotated for statistically significant trends ($p < 0.05$). The crossing point is computed from the intersection of the Political and Scientific regression lines. Panel~(b): composite dominance score per frame (4-method consensus described above), with the dominance threshold separating dominant from non-dominant frames. Data source: \texttt{cross\_year\_paradigm\_timeline.parquet} and \texttt{overall\_dominance\_scores.csv}. Generated by \texttt{gen\_figures.py}.
+
+\textbf{Figure~3 (first order: frame displacement).} Panel~(a): yearly frame displacement rate and driver ratio, each fitted with OLS regression and 95\% confidence bands. The crossing point is computed from the intersection of the two regression lines. Panel~(b): normalised causal effect of six event types on eight cascade frames. For each event type $\times$ cascade frame cell, the median $\beta$ from Phase~1 is divided by the frame-specific median $|\beta|$. Cultural ($n = 66$) and protest ($n = 9$) events are excluded due to insufficient sample sizes. Panel~(c): paradigmatic impact ($\Sigma|\beta|/n$) versus net paradigm effect (\% catalyst $-$ \% disruptor) for each combination of event type and target frame, from Model~A. Point size scales with sample size. Data source: \texttt{cluster\_cascade.parquet} and \texttt{stabsel\_cluster\_dominance.parquet}. Generated by \texttt{gen\_figures.py}.
+
+\textbf{Figure~4 (second order: cascades and the paradigm).} Panel~(a): strip plot of paradigmatic impact (mean $|\beta|$ on log scale) by cascade frame, from Model~B. Each point is one cascade ($n = 848$ with significant effects). Black bars show median and interquartile range. Frames ordered by decreasing median impact. Panel~(b): scatter plot of cascade size (log$_{10}$ articles) versus paradigmatic impact (log$_{10}$ mean $|\beta|$), coloured by frame, with LOWESS smooth (bandwidth 0.5). Spearman $\rho$ reported. Panel~(c): messenger share in cascades over time (5-year rolling mean). For each cascade, the \texttt{dominant\_messengers} field provides raw signal intensity per messenger type; shares are normalised across seven retained types (excluding security and legal messengers). OLS trend lines and $R^2$ shown for significant trends ($p < 0.05$). Data source: \texttt{cascades.json} and \texttt{stabsel\_cascade\_dominance.parquet}. Generated by \texttt{gen\_figure\_second\_order.py}.
+
+\textbf{Figure~5 (third order: the paradigm as structural residue).} Panel~(a): comparison of paradigmatic impact (median $|\beta|$ from Model~B) between displaced and aligned triple chains, with bootstrap 95\% CI on the median (5,000 replicates) and Mann-Whitney $U$ test. Panel~(b): top event$\to$cascade$\to$paradigm pathways ranked by mean $|\beta|$. Bars coloured by net direction (blue = net reinforcement, red = net disruption). Panel~(c): scientific dispossession across three measures (5-year rolling mean): paradigm dominance (\% of days Science is dominant), cascade share (\% of all cascade articles in Science cascades), and scientist messenger share (\% of cascade messenger annotations classified as scientist). Data source: \texttt{cluster\_cascade.parquet}, \texttt{stabsel\_cascade\_dominance.parquet}, \texttt{cascades.json}, and \texttt{cross\_year\_paradigm\_timeline.parquet}. Generated by \texttt{gen\_figure\_third\_order.py}.
+
+\subsection*{Supplementary Table methods}
+
+Each Supplementary Table is generated by a dedicated Python script:
+
+\begin{itemize}\setlength{\itemsep}{2pt}
+\item Table~1: \% of days each frame is dominant, by decade (\texttt{gen\_table\_dominance\_decades.py}).
+\item Table~2: displacement rate and driver ratio by decade (\texttt{gen\_table\_displacement.py}).
+\item Table~3: suppressor rates by event type $\times$ cascade frame (\texttt{gen\_table\_event\_frame\_effects.py}).
+\item Table~4: net paradigmatic effect by event type $\times$ target frame (\texttt{gen\_table\_paradigm\_impact.py}).
+\item Table~5: lag structure of event-to-paradigm effects (\texttt{gen\_table\_lag\_analysis.py}).
+\item Table~6: sentence-level framing in specific event contexts (\texttt{gen\_table\_sentence\_framing.py}).
+\item Table~7: cascade counts by frame and classification (\texttt{gen\_table\_cascade\_classification.py}).
+\item Table~8: ten largest cascades with paradigmatic impact (\texttt{gen\_table\_largest\_cascades.py}).
+\item Table~9: cascade article share by frame and decade (\texttt{gen\_table\_cascade\_share.py}).
+\item Table~10: frame dominance vs.\ paradigmatic impact (\texttt{gen\_table\_cascade\_dominance\_impact.py}).
+\item Table~11: messenger share by cascade frame (\texttt{gen\_table\_messenger\_share.py}).
+\item Table~12: triple chain statistics (\texttt{gen\_table\_triple\_chains.py}).
+\end{itemize}
+
+\noindent All scripts read production data from \texttt{results/production/} and are located in \texttt{paper/papers/CCF\_paradigm/scripts/}.
+
+\subsection*{Reproducibility}
+
+The full pipeline (data loading, indexing, cascade detection, event clustering, paradigm analysis, and stability selection) processes 47 years in approximately 72 minutes on a single workstation (Apple M3 Max, 128~GB). The codebase includes 396 unit tests covering signal construction, cascade detection, event occurrence detection, paradigm shift analysis, and stability selection inference. Code and production scripts are publicly available at \url{https://github.com/antoinelemor/CCF-media-cascade-detection}.
+\endgroup
+%TC:endignore

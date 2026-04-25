@@ -288,7 +288,7 @@ def temporal_cross_validation(y, X_with_controls, lag_labels, n_controls,
         X_train = X_with_controls[:train_end]
         X_test = X_with_controls[train_end:test_end]
 
-        stable_mask, _ = stability_selection(y_train, X_train)
+        stable_mask, _ = stability_selection(y_train, X_train, n_controls=n_controls)
         n_stable = stable_mask.sum()
         stable_folds.append(n_stable)
 
@@ -340,7 +340,7 @@ def train_test_evaluation(y, X_with_controls, lag_labels, n_controls,
     if len(y_test) < 10:
         return {'r2_train': np.nan, 'r2_test': np.nan, 'n_stable_train': 0}
 
-    stable_mask, _ = stability_selection(y_train, X_train)
+    stable_mask, _ = stability_selection(y_train, X_train, n_controls=n_controls)
     n_stable = stable_mask.sum()
 
     if n_stable == 0:
@@ -690,10 +690,8 @@ def run_model(model_type, frame, y_full, X_treatment, lag_labels,
     logger.info(f"Model {model_type} [{frame}]: AR({ar_order}), "
                 f"StabSel on {n_treat_cols} treatment cols...")
     t0 = time.time()
-    full_stable_mask, selection_freqs = stability_selection(y, X_with_controls)
-
-    full_stable_mask[:n_controls] = False
-    treatment_stable_mask = full_stable_mask[n_controls:]
+    treatment_stable_mask, selection_freqs = stability_selection(
+        y, X_with_controls, n_controls=n_controls)
     n_stable = treatment_stable_mask.sum()
     elapsed = time.time() - t0
     logger.info(f"Model {model_type} [{frame}]: {n_stable} stable "

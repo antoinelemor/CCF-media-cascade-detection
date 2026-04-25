@@ -1,0 +1,365 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{geometry}
+\geometry{a4paper, margin=2.5cm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{authblk}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage[numbers,sort&compress]{natbib}
+\bibliographystyle{naturemag}
+\usepackage[unicode=true,colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{lineno}
+\linenumbers
+
+\graphicspath{{../figures/}}
+
+\title{\textbf{An Empirically Informed Theory of Paradigmatic Change: Evidence from Public Coverage of Climate Change in Canada}}
+
+\author[1]{Aliz\'{e}e Pillod}
+\author[2]{Antoine Lemor}
+\author[1]{Matthew Taylor}
+\author[1]{Richard Nadeau}
+\affil[1]{Universit\'{e} de Montr\'{e}al}
+\affil[2]{Universit\'{e} de Sherbrooke}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+%TC:ignore
+\begin{abstract}
+In 1988, Canadian media covered climate change as a scientific problem. By 2023, the worst wildfire season in recorded history was covered primarily as a political debate about carbon taxes. What changed, and why? Analysing 266,271 articles from 20 Canadian newspapers (1978--2024), we show that climate events are increasingly reinterpreted through political and economic frames rather than transmitted in their natural register. This reframing has intensified over four decades: 80\% of causal links between events and media coverage now involve a change of frame. The Political-Economic configuration that dominates Canadian climate discourse does not need to be actively defended. It persists through structural inertia, while Science has lost its dominant position (from 81\% to 23\% of days), its share of media attention (25\% to 11\%), and the voice of its own messengers (39\% to 21\%). The same physical reality now produces a fundamentally different discursive outcome.
+\end{abstract}
+%TC:endignore
+
+%TC:ignore
+\vspace{6pt}
+\noindent\footnotesize\textit{Word count (main text, excl.\ abstract, captions, references):}
+\immediate\write18{texcount -1 -sum -merge -q \jobname.tex > \jobname.wcnt}
+\input{\jobname.wcnt}
+\normalsize
+\vspace{12pt}
+%TC:endignore
+
+%% ═══════════════ INTRODUCTION ═══════════════
+
+In the summer of 1988, after weeks of heat waves and drought across the Prairies, the \textit{Toronto Star} titled ``Summer of '88 could be hint of the future'' as ``scientists fear warming trend will continue.'' The article featured a researcher explaining that ``the four hottest years in Toronto's history have all been in the 1980s'' and that ``by about 2040 or 2050 we'll be well into it.'' No politician was quoted. The coverage was entirely scientific. Thirty-five years later, in 2023, Canada experienced its worst wildfire season in recorded history. The fires were extensively covered, but the media discussion rapidly shifted toward politics. The \textit{Globe and Mail} reported that ``Poilievre seizes the moment on Atlantic Canada carbon-tax fears'' while the \textit{National Post} declared ``Carbon tax is a loser for Liberals.'' In both cases, the same physical reality, heat waves, droughts and fires, were interpreted through radically \emph{different frames}. 
+
+Entman\cite{entmanFramingClarificationFractured1993} defines framing as the selection and salience-enhancement of particular aspects of perceived reality that promote specific problem definitions, causal interpretations, and policy prescriptions, be they political, scientific, economic, or otherwise. Frames reflect who holds discursive authority, what causal stories circulate, and which policy responses appear legitimate. In 1988, scientists were the main actors to frame and define the problem because they were the only actors who understood it. By 2023, the same physical reality had become a political and economic problem, and the actors who dominated it had changed accordingly. Frames that are dominant thus reveal the paradigmatic structure not only of media discourse, but of the broader forces of society. Frame dominance is therefore a form of discursive power\cite{mccombsAgendaSettingFunctionMass1972, nisbetCommunicatingClimateChange2009}. 
+
+In the public sphere, frames coexist. A single article on climate change may use several frames, and invoke politics, economics, and science simultaneously. But discursive space is finite, and a few frames tend to dominate at the expense of others. The same article may speak of costs and political strategy, but rarely of the rights of displaced populations or of cultural practices in the face of environmental change \emph{at the same time}. When two or three frames are repeated consistently across articles, outlets, and decades, they form a near-permanent structure: a \emph{paradigm}. It is this paradigm that confers discursive power. Hall\cite{hallPolicyParadigmsSocial1993} defines a paradigm as the overarching framework of ideas and standards that structures how a problem is conceived, which solutions are considered, and which actors are legitimate to define the terms of the debate.
+
+Empirical evidence from Canada points toward a political-economic paradigm in climate discourse. Canadian coverage tends to respond to political events rather than ecological conditions\cite{stoddartCanadianNewsMedia2016, schaferWhatDrivesMedia2014, haseClimateChangeNews2021} and to be framed as a governance issue\cite{ahchongAnthropogenicClimateChange2012}. Yet no theory has operationalised a paradigm in a way that makes it measurable, and no empirical framework has proposed mechanisms informed by data rather than postulated. Understanding such a paradigm is essential because it determines who speaks with authority on climate change, which solutions remain conceivable, and whether scientific knowledge can still influence public action\cite{skogstadPolicyParadigmsTransnationalism2011}. \emph{What is the structure of the climate paradigm, how has it changed over half a century, and what mechanisms sustain it?}
+
+%TC:ignore
+\begin{figure}[b!]
+\centering
+\includegraphics[width=0.72\textwidth]{figure1_schema.pdf}
+\caption{\textbf{Three orders of discursive change}, extending Hall\cite{hallPolicyParadigmsSocial1993} from policy to public discourse. A focusing event occurs and focuses attention without determining its interpretation (first order). The media cascade converges on a frame that may differ from the event's own (second order), reinforcing or eroding the existing paradigmatic configuration (third order). A and B represent cascade-mediated paradigmatic effects; C represents the direct paradigmatic effect of events. The two need not align. The paradigm also persists through structural inertia (economic interests, institutional routines) that operates independently of individual events and cascades.}
+\label{fig:schema}
+\end{figure}
+%TC:endignore
+
+We propose a theory organised around three analytically distinct orders of discursive change, extending Hall's\cite{hallPolicyParadigmsSocial1993} three orders of policy change to public discourse. In the spirit of Ockham's razor, the theory can be stated simply (see Fig.~\ref{fig:schema}). A paradigm is the configuration of dominant frames at a given moment. When an event occurs (first order), it can be interpreted through fundamentally different frames. The media converge on one or several dominant interpretations such as a political-economic one, forming a cascade (second order) that either reinforces or erodes the existing paradigm (third order). The paradigm also persists through its own \emph{structural inertia}, independently of any event, sustained by forces such as economic interests or institutions\cite{baumgartnerAgendasInstability2009}.
+
+Each order draws on a distinct body of literature. The first order is the \textit{focusing event}, defined by Birkland\cite{birklandDisasterAgendaSetting1997} and Kingdon\cite{kingdonAgendasAlternativesPublic2014} as an event that reaches the public and elites and opens a window of opportunity for reframing\cite{downsEcologyIssueAttention1972}. Each focusing event enters public attention with a ``natural'' frame. For example, a wildfire is environmental, a COP meeting is political. Yet the event does not determine its media framing. As our first example showed, heat waves and fires can be framed as a political or a scientific problem. 
+
+The second order is the \textit{media cascade}, a period in which multiple outlets converge on the same interpretive frame, creating a self-reinforcing dynamic analogous to the informational cascades described by Bikhchandani et al.\cite{bikhchandaniTheoryFadsFashion1992}. The cascade frame may differ from the event's natural frame because of frame competition\cite{snidermanStructurePoliticalArgument2004} and the politicisation of climate discourse\cite{chinnPoliticizationPolarizationClimate2020, bolsenUSNewsMedia2018}. The event triggers a cascade, but does not control it, and can affect directly the paradigm with or without media cascading effects (Fig.~\ref{fig:schema}). 
+
+The third order is the \textit{paradigm} itself. A cascade can reinforce or erode the existing paradigmatic configuration, but the paradigm is not the direct product of any single event or cascade. It persists long after events and cascades are forgotten, sustained by structural forces such as economic interests that benefit from a particular framing without actively promoting it\cite{culpepperQuietPoliticsBusiness2011}, or the absorption of environmental discourse into economic rationality\cite{hajerPoliticsEnvironmentalDiscourse1995}.
+
+We operationalise this theory using the CCF database\cite{lemorCCFDatabase2026}: 266,271 articles from 20 Canadian newspapers (1978--2024), processed into 9.2 million bilingual sentences with 65 hierarchical annotations (F1=0.866), including eight interpretive frames (Political, Economic, Scientific, Environmental, Justice, Cultural, Health, Security), messengers, event types, and solutions. Sentence-level annotation allows us to measure the recurrence of a particular frame across outlets and over time, and therefore the structure of a paradigm. Canada is simultaneously a major fossil fuel producer and a signatory of every major climate agreement, so that political and scientific framings are structurally in tension. Focusing events are detected through agglomerative clustering on sentence-level embeddings (50,892 event clusters; see Methods). Media cascades are detected via PELT changepoint detection on five daily Z-scores. Paradigm dominance is measured using four complementary methods (information theory, network centrality, Granger causality, proportional prominence); a frame achieves dominant status when selected by at least three of four threshold criteria. Causal relationships are identified using stability selection\cite{meinshausenStabilitySelection2010} with Newey-West HAC inference, yielding 8,810 significant effects across the three orders. The full codebase is publicly available.
+
+%% ═══════════════ RESULTS ═══════════════
+
+\section*{Results}
+
+\subsection*{A locked paradigm: politics and economics in, science and environment out}
+
+%TC:ignore
+\begin{figure}[b!]
+\centering
+\includegraphics[width=0.95\textwidth]{figure2_paradigm.pdf}
+\caption{\textbf{The paradigmatic structure.} (a) Mean paradigm dominance indices by year (smoothed), with linear trend lines for frames with significant slopes ($p < 0.05$). Politics ($+44\%$) and Economy ($+22\%$) rise; Science ($-33\%$) and Environment ($-32\%$) decline. The crossing point at $\sim$1988 marks the transition from scientific to political dominance. (b) Composite dominance score (4-method consensus: information theory, network centrality, Granger causality, proportional prominence). The threshold (0.584) separates the two dominant frames (Politics, Economy) from Science (0.560), which falls just below.}
+\label{fig:paradigm}
+\end{figure}
+%TC:endignore
+
+Two dominant frames were identified across 47 years: \emph{Politics} (composite score 0.925) and \emph{Economy} (0.584). \emph{Science} (0.560) falls just below the dominance threshold (Fig.~\ref{fig:paradigm}b). This structure has not always prevailed. In the early 1980s, \emph{Science} held the highest dominance index, reaching 0.66 in 1982 (Fig.~\ref{fig:paradigm}a). The turning point came in 1988, when \emph{Politics} overtook \emph{Science}. In an article extracted from the database dated June 24, 1988, Howard Ferguson, assistant deputy minister at Environment Canada, declared at the World Conference on the Changing Atmosphere that climate change was ``not just a scientific problem anymore'' and that Canada ``must look at how it will affect lifestyles and standard of living.''
+
+The secular trends confirm this shift (Fig.~\ref{fig:paradigm}a). Over 46 years, \emph{Politics} rose from 0.56 to 0.81 ($+44\%$, $R^2 = 0.42$), while \emph{Science} declined from 0.66 to 0.44 ($-33\%$, $R^2 = 0.56$) and \emph{Environment} from 0.50 to 0.34 ($-32\%$, $R^2 = 0.50$). At the 1992 Rio Summit, Maurice Strong warned that ``the Earth has cancer'' (\textit{Globe and Mail}, May 2, 1992), yet the summit's lasting effect was to recast the environmental crisis as an economic negotiation. \emph{Economy} rose steadily ($+22\%$, $R^2 = 0.22$). In the 1980s, \emph{Science} was dominant on 81\% of days and \emph{Politics} on only 72\%; by the 2020s, \emph{Politics} or \emph{Economy} are dominant every single day, while \emph{Science} retains dominance on only 23\%\cite{youngRepresentationsClimateChange2011} (\hyperref[tab:si_dominance_decades]{Supplementary Table~1}).
+
+\subsection*{First order: the growing distance between events and their coverage}
+
+Four results characterise the first order. The primary is an increasing \emph{frame displacement}. When a focusing event triggers a media cascade, the cascade's frame need not match the event's ``natural'' frame. When in 2016 a wildfire destroyed a town at Fort McMurray, the \textit{Toronto Star} asked ``will Fort McMurray wildfires tip the pipeline debate?'' (May 11, 2016). An environmental event was thus reframed as a political one. Across the full period, 80\% of event-to-cascade links involve such displacement (\hyperref[tab:si_displacement]{Supplementary Table~2}), and this proportion has increased over time, from 71\% to 85\% ($R^2 = 0.19$; Fig.~\ref{fig:displacement}a). 
+
+The second result is a  \emph{declining driver ratio}. Not all causal links between events and cascades are amplifying, as some events may actually suppress and mute an ongoing cascade. In November 2007, the release of the IEA World Energy Outlook and the IPCC synthesis report suppressed an ongoing political cascade on party environmental platforms. The \textit{Calgary Herald} warned of ``no quick fix for global meltdown'' (November 10, 2007) and displaced the partisan debate. Over the full period, the share of amplifying links (driver ratio) fell from 90\% to 46\% ($R^2 = 0.61$; Fig.~\ref{fig:displacement}a, \hyperref[tab:si_displacement]{Supplementary Table~2}). 
+
+Displacement and the driver ratio cross at the end of the 1990s (Fig.~\ref{fig:displacement}a). Before that point, events were more aligned with their natural frame. In 1988, the \textit{Globe and Mail} covered droughts and floods as ``chaotic summer adds fuel to doomsayers' fears'' (September 17, 1988), entirely in an environmental register. After the crossing, events suppress existing cascades as often as they amplify them. This transition coincides with the consolidation of the Political-Economic paradigm (Fig.~\ref{fig:paradigm}a). Once locked in, events are processed through dominant frames rather than through the frame closest to the event itself.
+%TC:ignore
+\begin{figure}[b!]
+\centering
+\includegraphics[width=0.95\textwidth]{figure3_first_order.pdf}
+\caption{\textbf{First order: frame displacement.} (a) Frame displacement rate (red, 71\% to 85\%, $R^2 = 0.19$) and driver ratio (blue, 90\% to 46\%, $R^2 = 0.61$) with 95\% confidence bands. The two trends cross around 1999. (b) Normalised causal effect of the six main event types on the eight cascade frames (median $\beta$ divided by frame-specific median $|\beta|$). Bars sorted by effect size. Cultural ($n = 66$) and protest ($n = 9$) events are excluded due to insufficient sample sizes, which prevent reliable per-frame estimation; their aggregate effects are reported in \hyperref[tab:si_event_frame]{Supplementary Table~3}. (c) Paradigmatic impact ($\Sigma|\beta|/n$, $x$-axis) versus net paradigm effect (\% catalyst $-$ \% disruptor, $y$-axis) for each combination of event type (colour) and target frame (shape: circle = Politics, diamond = Economics, square = Science). Weather strongly reinforces Politics (red circle, $+47$). Elections strongly erode Economics (blue diamond, $-43$). Most event types cluster near zero net effect, indicating paradigm resistance.}
+\label{fig:displacement}
+\end{figure}
+%TC:endignore
+
+The third result is \emph{attentional redirection} (Fig.~\ref{fig:displacement}b, \hyperref[tab:si_event_frame]{Supplementary Table~3}). Weather events suppress 69\% of \emph{Political} cascades and 51\% of \emph{Economic} ones, but only 15\% of \emph{Security} and 24\% of \emph{Environment} cascades. When the 2021 heat dome killed hundreds in British Columbia, the \textit{Globe and Mail} led with ``B.C.\ records hundreds of deaths linked to heat wave'' (July 1, 2021), entirely in a health register with no political framing. Counter-intuitively, elections also suppress 69\% of \emph{Political} cascades: the frame is so dominant that elections open space for other perspectives, such as \emph{Justice} and \emph{Environment}. Meetings amplify all frames at similar rates (57--77\%), while judiciary events amplify \emph{Science} (100\%) and \emph{Environment} (80\%).
+
+The fourth result is a \emph{decoupling} between cascade-level and paradigmatic effects (Fig.~\ref{fig:displacement}c, \hyperref[tab:si_paradigm_impact]{Supplementary Tables~4--5}). Weather events suppress 69\% of \emph{Political} cascades, yet 74\% of their paradigmatic effects on \emph{Politics} are catalytic ($\bar{\beta}_{0\text{--}2} = +1.47$; \hyperref[tab:si_lag_analysis]{Supplementary Table~5}). After the 2013 Alberta floods, the \textit{Globe and Mail} noted that ``Canada's disaster policy framework is a cat's cradle of perverse incentives'' (June 27, 2013): the flood displaced the carbon pricing debate but raised a structurally larger political question. Elections erode \emph{Economic} paradigm dominance (71\% disruptor): during the 2008 campaign, sentences on ``carbon tax'' were 95\% politically framed but only 10\% economically framed, down from 39\% outside the election period (\hyperref[tab:si_sentence_framing]{Supplementary Table~6}).
+
+%TC:ignore
+\begin{figure}[b!]
+\centering
+\includegraphics[width=0.95\textwidth]{figure4_second_order.pdf}
+\caption{\textbf{Second order: cascades and the paradigm.} (a) Paradigmatic impact (mean $|\beta|$, log scale) by cascade frame. Each point is one cascade ($n = 848$). Median bar and IQR in black. Frames ordered by decreasing impact. Non-dominant frames produce significantly higher impact (partial $\rho = -0.44$ after controlling for size). (b) Cascade size versus paradigmatic impact ($\rho = -0.83$, $p < 10^{-215}$) with LOWESS smooth, coloured by frame. The largest cascades are paradigmatically inert. (c) Messenger share in cascades over time (5-year rolling mean). Scientific messengers declined from 38\% to 18\% ($-0.49$ pp/yr, $R^2 = 0.80$) while official and economic messengers rose.}
+\label{fig:secondorder}
+\end{figure}
+%TC:endignore
+
+\subsection*{Second order: the paradox of media attention without paradigmatic influence}
+
+Four results characterise the second order. The first is \emph{structural inertia}. Of 848 cascades with significant paradigmatic effects, those belonging to \emph{Political} and \emph{Economic} frames produce four times less impact than non-dominant frames (median $|\beta| = 0.008$ vs $0.031$, $p < 10^{-29}$; Fig.~\ref{fig:secondorder}a, \hyperref[tab:si_dominance_impact]{Supplementary Table~10}). This holds after controlling for cascade size (partial $\rho = -0.44$, $p < 10^{-42}$). The dominant paradigm does not need strong cascades to sustain itself. \emph{Economy} is dominant on 85\% of days yet has produced zero strong cascades across 47 years (\hyperref[tab:si_cascade_class]{Supplementary Table~7}). Each sentence is also annotated with the type of actor who speaks (official, scientist, economic actor, activist, among others). Even within \emph{Economic} cascades, economic messengers account for only 19\% of voice share, behind officials (37\%; \hyperref[tab:si_messenger_share]{Supplementary Table~11}). The six largest cascades, all \emph{Political}, produced zero significant paradigmatic effects (Fig.~\ref{fig:secondorder}b, \hyperref[tab:si_largest_cascades]{Supplementary Table~8}). The largest mobilised 6,525 articles across 18 outlets over 94 days in early 2007, yet the configuration of dominant frames remained unchanged.
+
+The second result is a \emph{messenger displacement}. Over 47 years, the share of scientific messengers in cascades fell from 38\% to 18\% ($-0.49$ pp/yr, $R^2 = 0.80$), while official messengers rose from 28\% to 36\% ($+0.20$ pp/yr, $R^2 = 0.72$) and economic messengers from 8\% to 15\% ($+0.18$ pp/yr, $R^2 = 0.65$; Fig.~\ref{fig:secondorder}c, \hyperref[tab:si_messenger_share]{Supplementary Table~11}). The displacement is sharpest within \emph{Science} cascades themselves. In 1984--1995, scientists accounted for 47\% of messenger share in Science cascades and officials for 25\%. By 2016--2024, officials had overtaken scientists (30\% vs 30\%; \hyperref[tab:si_messenger_share]{Supplementary Table~11}). When the \textit{Whitehorse Daily Star} declared ``climate science indisputable'' (November 9, 2015), the speaker was Environment Minister Catherine McKenna, not a scientist. Science is increasingly narrated by officials\cite{hallSocialProductionNews1978} rather than by the scientists who produce it.
+
+The third result is a \emph{cascade capture}. \emph{Political} cascades absorb a growing share of all cascade articles, rising from 22\% in the 1980s to 35\% in the 2020s ($+0.50$ pp/yr, $R^2 = 0.44$), while \emph{Science} cascades fell from 25\% to 11\% ($-0.78$ pp/yr, $R^2 = 0.39$; \hyperref[tab:si_cascade_share]{Supplementary Table~9}). This trajectory mirrors the paradigmatic dominance trends (Fig.~\ref{fig:paradigm}a). The two declines of \emph{Science}, one in paradigm dominance and one in cascade share, reinforce each other. \emph{Science} is losing both its structural force within the paradigm and its capacity to produce the cascade events that could restore it.
+
+The fourth result is a \emph{peripheral accumulation}. The cascades with the highest paradigmatic impact belong to \emph{Security} (median $|\beta| = 0.081$), \emph{Health}\cite{pillodReframingClimateChange2021} ($0.047$), and \emph{Justice} ($0.044$), all non-dominant frames (Fig.~\ref{fig:secondorder}a). These cascades are small (median 24 to 78 articles) but they operate on registers where perceived urgency is high. In 2007, the \textit{Edmonton Journal} reported that ``retired U.S. admirals and generals'' warned of a ``continental security threat'' from an ``ice-free northern sea'' (May 11, 2007). As shown at the first order, weather events suppress \emph{Political} cascades but amplify \emph{Security} (85\% driver rate) and \emph{Health} (71\%). Each of these small peripheral cascades individually produces a larger paradigmatic effect than the largest political mega-cascade. Whether their cumulative pressure can eventually destabilise the dominant configuration remains an open question, but the direction of accumulation is clear.
+
+\subsection*{Third order: displaced chains and the erosion of science}
+
+Three results characterise the third order. The first is that \emph{reframing amplifies paradigmatic effects}. Of 2,397 complete triple chains (event $\to$ cascade $\to$ paradigm), 78\% involve frame displacement between the event and the cascade it triggers (\hyperref[tab:si_triple_stats]{Supplementary Table~12}). Displaced chains produce 60\% more paradigmatic impact than aligned ones (median $|\beta| = 0.019$ vs $0.012$, $p < 10^{-13}$; Fig.~\ref{fig:thirdorder}a). The most consequential pathways involve securitisation\cite{buzanSecurityNewFramework1998, detrazRethinkingEnvironmentalSecurity2009}: weather events reframed through \emph{Security} cascades produce paradigmatic effects 10 times larger than the global mean (Fig.~\ref{fig:thirdorder}b, \hyperref[tab:si_triple_stats]{Supplementary Table~12}).
+
+The second is that \emph{the net direction of triple chains sustains the dominant paradigm}. \emph{Politics} is the only frame significantly reinforced across all cascade channels (57\% catalyst, CI [52, 63]; Fig.~\ref{fig:thirdorder}c, \hyperref[tab:si_triple_stats]{Supplementary Table~12}). The most common pathway routes political events through \emph{Economic} cascades toward \emph{Science} erosion (Meeting $>$ Eco $>$ Sci, $n = 40$, 38\% catalyst). \emph{Economy} and \emph{Culture} are significantly eroded (43\% catalyst). The triple-chain system thus funnels discursive energy toward the Political frame while dispersing it away from its co-dominant partner.
+
+%TC:ignore
+\begin{figure}[t!]
+\centering
+\includegraphics[width=0.95\textwidth]{figure5_third_order.pdf}
+\caption{\textbf{Third order: the paradigm as structural residue.} (a) Displaced triple chains (where the cascade frame differs from the event's natural frame) produce 60\% more paradigmatic impact than aligned chains ($p < 10^{-13}$). Coloured rectangles show the bootstrap 95\% CI on the median. (b) Top pathways by paradigmatic impact (mean $|\beta|$). Weather events reframed through \emph{Security} cascades dominate. Red bars indicate net disruption ($<$ 50\% catalyst), blue bars net reinforcement. (c) Scientific dispossession across three measures (5-year rolling mean): paradigm dominance (\% of days), cascade share (\% of articles), and scientist messenger share all decline.}
+\label{fig:thirdorder}
+\end{figure}
+%TC:endignore
+
+The third result is a \emph{scientific dispossession} that converges across all three orders (Fig.~\ref{fig:thirdorder}c). At the paradigmatic level, \emph{Science} dominance fell from 80\% to 23\% of days (Fig.~\ref{fig:paradigm}a). At the cascade level, its share dropped from 25\% to 11\% while officials overtook scientists as narrators of science itself (Fig.~\ref{fig:secondorder}c). At the triple-chain level, the most common pathway erodes \emph{Science} (Meeting $>$ Eco $>$ Sci, 62\% disruptor). The 2023 wildfire season illustrates this convergence. 18 million hectares burned, the largest cascade comprised 3,256 political articles, and the \textit{National Post} opened with ``here comes Ottawa's second carbon tax'' (June 1, 2023). The two \emph{Science} cascades (1,318 articles) produced zero effects on \emph{Science} dominance.
+
+%% ═══════════════ DISCUSSION ═══════════════
+
+\section*{Discussion}
+
+\subsection*{Scientific dispossession as structural displacement}
+
+The political-economic paradigm documented here reflects structural forces in society, not editorial choices. Scientists were the first to attract public attention to climate change, but once political actors seized the issue, discursive space was progressively absorbed by political and economic framing. Scientists lost discursive space not because their findings were contested, but because political and economic actors occupied the space that scientists had opened. Officials now narrate science on their behalf\cite{hallSocialProductionNews1978}, cascades in the scientific frame have shrunk to 11\% of all coverage, and even the largest mobilisation of scientific articles produces no measurable effect on paradigmatic structure. The quiet politics of economic framing\cite{culpepperQuietPoliticsBusiness2011} compounds this displacement: \emph{Economy} is dominant on 85\% of days without ever producing a strong cascade, ensuring that ``how much does it cost?'' accompanies every climate decision.
+
+\subsection*{Anomalies and the prospect of paradigmatic change}
+
+In Kuhn's\cite{kuhnStructureScientificRevolutions1996} account, paradigms do not fall to direct assault but to the accumulation of anomalies that the dominant framework cannot absorb. Our data suggest an analogous process. Weather events, the physical anomalies of climate change, suppress 69\% of \emph{Political} cascades and, when reframed through \emph{Security}, produce paradigmatic effects nearly eight times larger than the global mean. Elections constitute another source of disruption: they suppress 69\% of both \emph{Political} and \emph{Economic} cascades simultaneously, and erode \emph{Economic} paradigm dominance (71\% disruptor). The direction of this accumulation points toward a health-security register: \emph{Security} and \emph{Health} cascades already produce the highest paradigmatic impact of any frame, and the Lancet Countdown\cite{romanelloLancetCountdown2023} has argued that climate change is fundamentally a health crisis\cite{costelloManagingHealthEffects2009}. If extreme weather events continue to intensify, the discursive pressure may eventually reshape the paradigm toward a configuration in which bodily harm and territorial security, not carbon pricing, define the terms of the debate.
+
+\subsection*{Limitations}
+
+Our analysis is restricted to Canadian print media and cannot establish causation in the strict interventionist sense. The sentence-level annotations, while validated (F1=0.866), impose categorical boundaries on frames that in practice overlap and interact. Whether the scientific dispossession documented here translates into policy outcomes remains open, though the parallel between declining scientific voice in media and the persistent difficulty of enacting science-informed climate policy in Canada is suggestive. What is clear is that the discursive conditions under which scientific knowledge could inform public action have been progressively eroded, and that the forces most likely to reshape those conditions are not arguments but events.
+
+%% ═══════════════ ONLINE METHODS ═══════════════
+%TC:ignore
+
+\newpage
+\input{CCF_paradigm_NCC_methods}
+
+%TC:endignore
+
+\newpage
+%TC:ignore
+\bibliography{bibliography}
+%TC:endignore
+
+%% ═══════════════ SUPPLEMENTARY INFORMATION ═══════════════
+%TC:ignore
+\begingroup\sloppy
+
+\newpage
+\setcounter{table}{0}
+\renewcommand{\tablename}{Supplementary Table}
+
+\section*{Supplementary Information}
+
+All scripts referenced below are available at\\
+\url{https://github.com/antoinelemor/CCF-media-cascade-detection}.
+
+%% --- TABLE 1: DOMINANCE BY DECADE ---
+
+\subsection*{Supplementary Table 1: Frame dominance by decade}
+
+\input{../tables/table_dominance_decades.tex}
+
+\subsubsection*{Method}
+Each row in the paradigm timeline represents one day. For each day, a 12-week sliding window of weekly frame proportions is analysed by the \texttt{ParadigmDominanceAnalyzer}. The analyser applies four scoring methods with equal weight (information theory, network centrality, Granger causality, proportional prominence) and four threshold methods (above-median, natural gradient break, elbow, statistical significance at mean $+ 0.5\sigma$). A frame is classified as dominant when selected by at least three of the four threshold methods. Multiple frames can be dominant simultaneously on a given day. The 1980s begin in 1982, reflecting the start of sufficient data density in the CCF Database (266,271 articles, 1978--2024).
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{scripts/gen\_table\_dominance\_decades.py}, which reads the paradigm timelines (\texttt{paradigm\_timeline.parquet}) produced by Step~4 of the pipeline.
+
+%% --- TABLE 2: DISPLACEMENT AND DRIVER RATIO ---
+
+\newpage
+\subsection*{Supplementary Table 2: Frame displacement and driver ratio}
+
+\input{../tables/table_displacement.tex}
+
+\subsubsection*{Method}
+StabSel Phase~1 identifies causal links between event clusters and media cascades. Each link is classified as \emph{driver} (amplifying) or \emph{suppressor}. Each event cluster has a dominant type mapped to a natural frame: weather events to \emph{Environment}, elections, meetings, policy, and protest events to \emph{Politics}, publications to \emph{Science}, judiciary events to \emph{Justice}, cultural events to \emph{Culture}.
+
+Frame displacement occurs when the cascade frame differs from the event's natural frame. The driver ratio is the share of all links classified as drivers rather than suppressors. Linear trends are fitted by OLS on the yearly series. The crossing point is the year where the two regression lines intersect.
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{scripts/gen\_table\_displacement.py}, which reads the StabSel Phase~1 results (\texttt{cluster\_cascade.parquet}) produced by Step~5 of the pipeline.
+
+%% --- TABLE 3: SUPPRESSOR RATES ---
+
+\newpage
+\subsection*{Supplementary Table 3: Suppressor rate by event type and cascade frame}
+
+\input{../tables/table_event_frame_effects.tex}
+
+\subsubsection*{Method}
+Each cell reports the percentage of causal links classified as suppressors (rather than drivers) by stability selection, for a given event type and cascade frame. Weather and election events suppress the dominant paradigm frames (\emph{Politics}, \emph{Economy}) at rates of 69\%, while suppressing peripheral frames (\emph{Environment}, \emph{Security}) at much lower rates (14--24\%). This asymmetry indicates that these event types function as attentional redirectors, temporarily disrupting the dominant paradigm and opening windows of salience for peripheral frames. Cells with fewer than 3 links are marked as missing.
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{scripts/gen\_table\_event\_frame\_effects.py}, which reads the StabSel Phase~1 results (\texttt{cluster\_cascade.parquet}) produced by Step~5 of the pipeline.
+
+%% --- TABLE 4: PARADIGMATIC IMPACT ---
+
+\newpage
+\subsection*{Supplementary Table 4: Net paradigmatic effect by event type}
+
+\input{../tables/table_paradigm_impact.tex}
+
+\subsubsection*{Method}
+While \hyperref[tab:si_event_frame]{Supplementary Table~3} measures the effect of events on cascades (first order), this table measures the effect of events on paradigm dominance (the link between first and third order). StabSel Phase~2 identifies causal links between event clusters and the paradigm dominance index of each frame, using a 7-day lag structure with AR($p$) controls and Newey-West inference. Each significant link is classified as \emph{catalyst} (reinforcing the target frame's dominance) or \emph{disruptor} (eroding it). The net score (\% catalyst $-$ \% disruptor) summarises the directional asymmetry. The comparison between \hyperref[tab:si_event_frame]{Supplementary Tables~3} and~\hyperref[tab:si_paradigm_impact]{4} reveals the temporal decoupling between cascade-level and paradigmatic effects. Weather events suppress 69\% of \emph{Political} cascades (Table~3), yet produce a net $+47$ reinforcement of \emph{Political} paradigm dominance (Table~4). The episodic displacement of a political cascade generates renewed demand for political response, and the cumulative paradigmatic effect is the opposite of the cascade-level one.
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{scripts/gen\_table\_paradigm\_impact.py}, which reads the StabSel Phase~2 results (\texttt{stabsel\_cluster\_dominance.parquet}) produced by Step~5b of the pipeline.
+
+%% --- TABLE 5: LAG ANALYSIS ---
+
+\newpage
+\subsection*{Supplementary Table 5: Lag structure of event-to-paradigm effects}
+
+\input{../tables/table_lag_analysis.tex}
+
+\subsubsection*{Method}
+StabSel Phase~2 estimates per-lag coefficients for each event cluster and target frame, with lags from 0 to 7 days. The table aggregates these coefficients by event type and frame. The beta-weighted mean lag indicates whether effects concentrate at short or long delays. Early (0--2 days) and late (3--7 days) mean betas reveal whether the sign of the effect changes across lags. A $+/-$ pattern indicates positive effects at short lags that turn negative at longer lags. The comparison with cascade-level effects (\hyperref[tab:si_event_frame]{Supplementary Table~3}) reveals the mechanism of decoupling. Weather events suppress \emph{Political} cascades (69\% suppressor rate) but reinforce \emph{Political} paradigm dominance immediately ($\bar{\beta}_{0\text{--}2} = +1.47$), indicating that the cascade-level and paradigmatic effects operate through separate channels rather than through a delayed temporal sequence.
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_lag\_analysis.py} in \texttt{scripts/},
+which reads the raw StabSel Phase~2 results produced by Step~5b.
+
+%% --- TABLE 6: SENTENCE FRAMING ---
+
+\newpage
+\subsection*{Supplementary Table 6: Sentence-level framing in specific event contexts}
+
+\input{../tables/table_sentence_framing.tex}
+
+\subsubsection*{Method}
+The CCF Database annotates each sentence with binary frame labels. For each context, the table reports the percentage of sentences classified under each frame. The 2008 election context selects sentences containing ``carbon tax,'' ``Green Shift,'' ``cap and trade,'' or ``carbon price'' during the campaign period (September 1 to October 15, 2008) with election signal $> 0.3$. The non-election baseline covers the same keywords from January to August 2008. The IPCC SR15 context selects sentences with publication signal $> 0.3$ during October 8--14, 2018. The publication baseline covers all sentences with publication signal $> 0.3$ in 2018. Multiple frames can apply to the same sentence.
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_sentence\_framing.py} in \texttt{scripts/},
+which queries the PostgreSQL CCF Database directly.
+
+%% --- TABLE 7: CASCADE CLASSIFICATION ---
+
+\newpage
+\subsection*{Supplementary Table 7: Cascade count by frame and classification}
+
+\input{../tables/table_cascade_classification.tex}
+
+\subsubsection*{Method}
+Each cascade is classified as strong ($\geq 0.65$), moderate ($0.25$--$0.65$), or weak ($< 0.25$) based on the composite v2 score. The table reports the count and percentage of strong cascades by frame, along with median and mean article counts. \emph{Economy} and \emph{Environment} produce zero strong cascades despite being among the most frequent frames, while \emph{Justice} has the highest strong-cascade rate (10\%).
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_cascade\_classification.py} in \texttt{scripts/},
+which reads cascade metadata from \texttt{cascades.json} files.
+
+%% --- TABLE 8: LARGEST CASCADES ---
+
+\newpage
+\subsection*{Supplementary Table 8: Largest cascades by article count}
+
+\input{../tables/table_largest_cascades.tex}
+
+\subsubsection*{Method}
+The ten largest cascades by article count are listed with their paradigmatic impact (mean $|\beta|$ across all significant effects). The six largest cascades produced zero significant paradigmatic effects. All ten are \emph{Political} or \emph{Economic}. This confirms the structural inertia of the dominant paradigm described in the main text.
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_largest\_cascades.py} in \texttt{scripts/},
+which reads cascade metadata and StabSel Phase~2 results.
+
+%% --- TABLE 9: CASCADE SHARE ---
+
+\newpage
+\subsection*{Supplementary Table 9: Cascade article share by frame}
+
+\input{../tables/table_cascade_share.tex}
+
+\subsubsection*{Method}
+For each decade, the share of all cascade articles belonging to each frame is computed. This measures which frames capture the cascade phenomenon, as distinct from paradigm dominance (which measures frame proportions within individual articles). \emph{Political} cascades rose from 22\% to 35\% of all cascade articles ($+0.50$ pp/yr, $R^2 = 0.44$), while \emph{Science} cascades fell from 25\% to 11\% ($-0.78$ pp/yr, $R^2 = 0.39$).
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_cascade\_share.py} in \texttt{scripts/},
+which reads cascade metadata from \texttt{cascades.json} files.
+
+%% --- TABLE 10: DOMINANCE AND IMPACT ---
+
+\newpage
+\subsection*{Supplementary Table 10: Cascade frame dominance and paradigmatic impact}
+
+\input{../tables/table_cascade_dominance_impact.tex}
+
+\subsubsection*{Method}
+Each cascade with at least one significant paradigmatic effect ($|\beta| < 100$, role $\neq$ inert) is matched to its frame's composite dominance score (from the 4-method consensus). The relationship between frame dominance and paradigmatic impact is tested with Spearman correlation and Mann-Whitney $U$. The partial correlation controls for cascade size by regressing both dominance score and log impact on log(n\_articles), then correlating the residuals. The relationship is not a size artifact: non-dominant frames produce higher impact even after controlling for the fact that their cascades are smaller (partial $\rho = -0.44$, $p < 10^{-42}$).
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_cascade\_dominance\_impact.py} in \texttt{scripts/},
+which reads cascade metadata and StabSel Phase~2 results.
+
+%% --- TABLE 11: MESSENGER SHARE ---
+
+\newpage
+\subsection*{Supplementary Table 11: Messenger share by cascade frame}
+
+\input{../tables/table_messenger_share.tex}
+
+\subsubsection*{Method}
+Each cascade's \texttt{dominant\_messengers} field provides the raw signal intensity for each messenger type. Shares are computed by normalising across the seven retained messenger types (excluding security and legal messengers, which carry negligible signal). The table reports the mean share within cascades of each frame. Official messengers dominate six of eight frames. Economic messengers account for only 19\% even within \emph{Economic} cascades, consistent with the structural inertia of the paradigm described in the main text.
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_messenger\_share.py} in \texttt{scripts/},
+which reads cascade metadata from \texttt{cascades.json} files.
+
+%% --- TABLE 12: TRIPLE CHAIN STATS ---
+
+\newpage
+\subsection*{Supplementary Table 12: Triple chain statistics}
+
+\input{../tables/table_triple_chain_stats.tex}
+
+\subsubsection*{Method}
+A complete triple chain links an event cluster to a cascade (StabSel Phase~1) and the same cascade to a paradigm frame (StabSel Phase~2, Model~B). The natural frame of each event type is defined by the mapping: weather to \emph{Environment}, elections/meetings/policy/protest to \emph{Politics}, publications to \emph{Science}, judiciary to \emph{Justice}, cultural to \emph{Culture}. A chain is displaced when the cascade frame differs from the event's natural frame. The displaced vs aligned impact comparison uses Mann-Whitney $U$. The reinforcement rate (\% catalyst) is tested per target frame with bootstrap 95\% CI (5,000 replicates).
+
+\subsubsection*{Reproducibility}
+Generated by \texttt{gen\_table\_triple\_chains.py} in \texttt{scripts/},
+which reads StabSel Phase~1 and Phase~2 results.
+
+\endgroup
+%TC:endignore
+
+\end{document}

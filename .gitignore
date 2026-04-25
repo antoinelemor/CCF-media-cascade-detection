@@ -18,7 +18,6 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-CODEBOOK.md
 
 # Virtual Environment
 .venv/
@@ -51,7 +50,9 @@ coverage.xml
 .ipynb_checkpoints
 *.ipynb
 
-# Data and Cache
+# Data (large binary files)
+data/embeddings/
+data/embeddings-test/
 cache/
 *.pkl
 *.pickle
@@ -64,32 +65,16 @@ logs/
 log_*.txt
 diagnostic_output.txt
 test_output.log
+texput.log
 
-# Results and Output
+# Production results (large, generated from pipeline)
 results/
-test_output/
-output/
-epistemic_authority_results/
-network_analysis/
-*.gexf
-*.graphml
-*.png
-*.jpg
-*.jpeg
-*.pdf
-*.svg
 
-# Archives and Backups
-archives/
-backup/
-old/
-*.bak
-*.backup
+# Analysis archives (old exploratory work)
+analysis/
 
-# Database dumps
-*.sql
-*.dump
-*.db
+# External libraries
+lib/
 
 # System files
 Thumbs.db
@@ -106,31 +91,54 @@ temp/
 *.tar.gz
 *.zip
 
-# Overleaf paper (separate git repo)
-paper/
+# Database dumps
+*.sql
+*.dump
+*.db
 
-# Embeddings (large binary files)
-data/embeddings/
-data/embeddings-test/
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.wcnt
+*.toc
+*.lof
+*.lot
+*.out
 
-# Analysis archives
-analysis/
+# ══════════════════════════════════════════════════
+# Paper: include only the NCC paradigm article
+# ══════════════════════════════════════════════════
 
-# Lib (external bindings)
-lib/
+# Exclude other authors' solo work
+paper/papers/solo_alizée/
 
-# Keep essential files
-!README.md
-!CLAUDE.md
-!requirements.txt
-!setup.cfg
-!cascade_detector/
-!cascade_detector/**
-# Tests and scripts excluded from git
-tests/
-scripts/
-!docs/
-!docs/**
+# Exclude old paper infrastructure (Overleaf clone, old scripts)
+paper/.git/
+paper/.gitignore
+paper/README.md
+paper/results/
+paper/src/
+paper/scripts/
+paper/requirements.txt
+paper/papers/bibliography/
+paper/papers/CCF_paradigm/README.md
 
-# Always ignore pycache (even inside kept directories)
+# Exclude superseded tex files (main.tex is the canonical version)
+paper/papers/CCF_paradigm/latex/CCF_paradigm_NCC.tex
+paper/papers/CCF_paradigm/latex/CCF_paradigm_NCC_redux.tex
+paper/papers/CCF_paradigm/latex/CCF_paradigm_NCC_SI.tex
+paper/papers/CCF_paradigm/latex/CCF.bib
+
+# Exclude compiled PDFs (regenerable from tex)
+paper/papers/CCF_paradigm/latex/*.pdf
+
+# Exclude generated CSV/JSON intermediates (regenerable from scripts)
+paper/papers/CCF_paradigm/tables/*.csv
+paper/papers/CCF_paradigm/tables/*.json
+
+# Always ignore pycache
 __pycache__/

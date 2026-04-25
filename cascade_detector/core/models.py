@@ -189,6 +189,20 @@ class EventCluster:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
+        # Aggregate doc_ids and seed_doc_ids from occurrences
+        all_doc_ids = set()
+        all_seed_doc_ids = set()
+        for occ in self.occurrences:
+            for d in occ.doc_ids:
+                try:
+                    all_doc_ids.add(int(d))
+                except (ValueError, TypeError):
+                    all_doc_ids.add(d)
+            for d in occ.seed_doc_ids:
+                try:
+                    all_seed_doc_ids.add(int(d))
+                except (ValueError, TypeError):
+                    all_seed_doc_ids.add(d)
         return _jsonify({
             'cluster_id': self.cluster_id,
             'occurrence_ids': [o.occurrence_id for o in self.occurrences],
@@ -198,6 +212,7 @@ class EventCluster:
             'core_end': self.core_end.isoformat(),
             'total_mass': self.total_mass,
             'n_occurrences': self.n_occurrences,
+            'n_articles': len(all_doc_ids),
             'is_multi_type': self.is_multi_type,
             'strength': self.strength,
             'strength_components': self.strength_components,
@@ -206,6 +221,8 @@ class EventCluster:
             'type_structure': self.type_structure,
             'type_overlap_graph': self.type_overlap_graph,
             'type_ranking': [{'type': t, 'score': round(s, 4)} for t, s in self.type_ranking],
+            'doc_ids': sorted(all_doc_ids),
+            'seed_doc_ids': sorted(all_seed_doc_ids),
         })
 
 
