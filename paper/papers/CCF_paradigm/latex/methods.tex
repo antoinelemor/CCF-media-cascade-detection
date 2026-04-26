@@ -1,6 +1,6 @@
 %TC:ignore
 \begingroup\sloppy
-\section*{Online Methods}
+\section*{Online Methods}\label{sec:methods}
 
 \subsection*{Data}
 
@@ -42,7 +42,7 @@ d_{ic} = 0.25 \times d_{\text{temp}} + 0.35 \times d_{\text{sem}} + 0.15 \times 
 \end{equation}
 where $d_{\text{sig}} = 1 - \bar{e}_{t(c)}$ is the complement of the article's event-type signal for the cluster's dominant type. The semantic distance is computed via a single matrix multiplication of article embeddings against cluster centroids, followed by corpus-baseline adjustment. Entity distances use sparse CSR matrix multiplication. The membership score is $\beta_{ic} = \max(0, 1 - d_{ic}/\tau_c)$ where $\tau_c$ is a self-adjusting threshold per cluster. At iteration~0, $\tau_c = \min(0.5, \max(0.05, \text{median}(d_{\text{seeds}}) \times 2))$. At iteration~1, $\tau_c$ is recalibrated from the core of the cluster (articles with belonging $\geq$ 75th percentile of positive belongings): $\tau_c = \min(0.5, \max(0.05, \text{median}(d_{\text{core}}) \times 2))$. Two iterations are performed. Between iterations, cluster centroids are updated as belonging$\times$signal-weighted means of article embeddings, L2-normalised. Seed articles are unconditionally included regardless of belonging score.
 
-\textbf{Phase~5: confidence scoring.} Each occurrence receives a confidence score from five equally weighted components (0.20 each): centroid tightness (mean belonging of assigned articles), coherence residual $\max\bigl(0, (\bar{c} - b)/(1-b)\bigr)$ where $\bar{c}$ is the mean pairwise cosine similarity and $b$ the corpus baseline, media diversity $1 - 1/n_{\text{media}}$, recruitment success $\min\bigl(1, (n_{\text{total}}/n_{\text{seeds}} - 1)/2\bigr)$, and size adequacy $\min(1, m/10)$ where $m$ is the effective mass ($\sum \beta$). Occurrences with confidence $< 0.40$ are flagged as low-confidence. The pipeline produces 50,892 event clusters across 47 years.
+\textbf{Phase~5: confidence scoring.} Each occurrence receives a confidence score from five equally weighted components (0.20 each): centroid tightness (mean belonging of assigned articles), coherence residual $\max\bigl(0, (\bar{c} - b)/(1-b)\bigr)$ where $\bar{c}$ is the mean pairwise cosine similarity and $b$ the corpus baseline, media diversity $1 - 1/n_{\text{media}}$, recruitment success $\min\bigl(1, (n_{\text{total}}/n_{\text{seeds}} - 1)/2\bigr)$, and size adequacy $\min(1, m/10)$ where $m$ is the effective mass ($\sum \beta$). Occurrences with confidence $< 0.40$ are flagged as low-confidence. The pipeline produces 50,880 event clusters across 47 years.
 
 \textbf{Event--cascade attribution.} Occurrences are linked to cascades by temporal and article overlap. An attribution is created when the occurrence's core period (belonging-weighted 10th--90th date percentiles) overlaps with the cascade window and at least one article is shared.
 
@@ -90,7 +90,7 @@ Validation uses a 70/30 temporal train-test split and three-fold expanding-windo
 
 \textbf{Model~B: cascade to paradigm.} The dependent variable and AR controls are identical to Model~A. The treatment variable is the cascade's daily composite score (the detection-stage composite signal restricted to the cascade window), with lags 0 through 7 days. Each cascade--frame pair is classified using the same taxonomy. An \texttt{is\_own\_frame} flag marks whether the cascade's frame matches the target frame, enabling the distinction between own-frame effects (auto-amplification, auto-suppression) and cross-frame effects (catalysis, disruption).
 
-\textbf{Triple chains.} A complete triple chain requires all three layers to be significant within the same year: an event cluster must be causally linked to a cascade (Phase~1), and the same cascade must be causally linked to a paradigm frame (Model~B). Each event type is mapped to a natural frame (weather to Environment, elections/meetings/policy/protest to Politics, publications to Science, judiciary to Justice, cultural to Culture). A chain is classified as displaced when the cascade frame differs from the event's natural frame. The pipeline yields 8,810 significant effects across the three layers.
+\textbf{Triple chains.} A complete triple chain requires all three layers to be significant within the same year: an event cluster must be causally linked to a cascade (Phase~1), and the same cascade must be causally linked to a paradigm frame (Model~B). Each event type is mapped to a natural frame (weather to Environment, elections/meetings/policy/protest to Politics, publications to Science, judiciary to Justice, cultural to Culture). A chain is classified as displaced when the cascade frame differs from the event's natural frame. The pipeline yields 9,548 significant effects across the three layers.
 
 \subsection*{Figure methods}
 
@@ -106,24 +106,7 @@ Validation uses a 70/30 temporal train-test split and three-fold expanding-windo
 
 \subsection*{Supplementary Table methods}
 
-Each Supplementary Table is generated by a dedicated Python script:
-
-\begin{itemize}\setlength{\itemsep}{2pt}
-\item Table~1: \% of days each frame is dominant, by decade (\texttt{gen\_table\_dominance\_decades.py}).
-\item Table~2: displacement rate and driver ratio by decade (\texttt{gen\_table\_displacement.py}).
-\item Table~3: suppressor rates by event type $\times$ cascade frame (\texttt{gen\_table\_event\_frame\_effects.py}).
-\item Table~4: net paradigmatic effect by event type $\times$ target frame (\texttt{gen\_table\_paradigm\_impact.py}).
-\item Table~5: lag structure of event-to-paradigm effects (\texttt{gen\_table\_lag\_analysis.py}).
-\item Table~6: sentence-level framing in specific event contexts (\texttt{gen\_table\_sentence\_framing.py}).
-\item Table~7: cascade counts by frame and classification (\texttt{gen\_table\_cascade\_classification.py}).
-\item Table~8: ten largest cascades with paradigmatic impact (\texttt{gen\_table\_largest\_cascades.py}).
-\item Table~9: cascade article share by frame and decade (\texttt{gen\_table\_cascade\_share.py}).
-\item Table~10: frame dominance vs.\ paradigmatic impact (\texttt{gen\_table\_cascade\_dominance\_impact.py}).
-\item Table~11: messenger share by cascade frame (\texttt{gen\_table\_messenger\_share.py}).
-\item Table~12: triple chain statistics (\texttt{gen\_table\_triple\_chains.py}).
-\end{itemize}
-
-\noindent All scripts read production data from \texttt{results/production/} and are located in \texttt{paper/papers/CCF\_paradigm/scripts/}.
+Each Supplementary Table is generated by a dedicated Python script reading production data from \texttt{results/production/}. \hyperref[tab:si_dominance_decades]{Table~1} reports frame dominance by decade. \hyperref[tab:si_displacement]{Table~2} reports displacement rate and driver ratio. \hyperref[tab:si_event_frame]{Table~3} reports suppressor rates by event type and cascade frame. \hyperref[tab:si_paradigm_impact]{Table~4} reports net paradigmatic effect by event type and target frame. \hyperref[tab:si_lag_analysis]{Table~5} reports the lag structure of event-to-paradigm effects. \hyperref[tab:si_sentence_framing]{Table~6} reports sentence-level framing in specific event contexts. \hyperref[tab:si_cascade_class]{Table~7} reports cascade counts by frame and classification. \hyperref[tab:si_largest_cascades]{Table~8} lists the ten largest cascades with their paradigmatic impact. \hyperref[tab:si_cascade_share]{Table~9} reports cascade article share by frame and decade. \hyperref[tab:si_dominance_impact]{Table~10} reports the relationship between frame dominance and paradigmatic impact. \hyperref[tab:si_messenger_share]{Table~11} reports messenger share by cascade frame. \hyperref[tab:si_triple_stats]{Table~12} reports triple chain statistics. All generation scripts are in \texttt{paper/papers/CCF\_paradigm/scripts/}.
 
 \subsection*{Reproducibility}
 

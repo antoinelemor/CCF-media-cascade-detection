@@ -301,7 +301,7 @@ def main():
     print(f"Aligned:   n={len(alig)}, median |b|={np.median(alig):.4f}")
     print(f"Mann-Whitney p={p:.2e}")
     print(f"\nTarget frame % catalyst:")
-    for _, r in fdf.iterrows():
+    for _, r in tdf.iterrows():
         sig = '*' if not (r['ci_lo'] <= 50 <= r['ci_hi']) else ' '
         print(f"  {FL[r['frame']]:>10}: {r['pct']:.1f}% [{r['ci_lo']:.1f}, {r['ci_hi']:.1f}] {sig}")
 
