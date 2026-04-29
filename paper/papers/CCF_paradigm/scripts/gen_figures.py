@@ -110,140 +110,131 @@ def load_aa(): return load_pq('stabsel_alignment_a.parquet')
 # ══════════════════════════════════════════════════════════════════════════
 def fig_schema():
     print("Fig 1: Schema...")
-    fig, ax = plt.subplots(figsize=(7.2, 7.2))
-    ax.set_xlim(-0.5, 10.5); ax.set_ylim(-1.5, 9.5); ax.axis('off')
+    fig, ax = plt.subplots(figsize=(7.2, 6.8))
+    ax.set_xlim(-0.5, 12.0); ax.set_ylim(-1.3, 9.0); ax.axis('off')
     ax.set_aspect('equal', adjustable='datalim')
 
-    center = (5.0, 4.5)
+    cx, cy = 5.0, 4.5
 
-    # Three nested circles
-    rings = [
-        (4.4, '#B0BEC5', 0.10),
-        (2.9, '#90A4AE', 0.12),
-        (1.4, '#78909C', 0.15),
-    ]
-    for r, col, alpha in rings:
-        circle = plt.Circle(center, r,
-                    facecolor=col, alpha=alpha, edgecolor=col,
-                    lw=1.0, linestyle='-', zorder=1)
-        ax.add_patch(circle)
+    # ── Two rings: paradigm (outer) and cascade (middle) ──
+    for r, col, alpha in [(4.4, '#B0BEC5', 0.10), (2.9, '#90A4AE', 0.12)]:
+        ax.add_patch(plt.Circle((cx, cy), r, facecolor=col, alpha=alpha,
+                     edgecolor=col, lw=1.0, zorder=1))
 
-    # ── Star at center (focusing event) — no colour, grey ──
-    n_points = 10
-    outer_r, inner_r = 0.65, 0.35
+    # ── Large star at center (focusing event) ──
+    n_points = 12
+    outer_r, inner_r = 1.8, 1.0
     star_x, star_y = [], []
     for i in range(2 * n_points):
-        angle = np.pi/2 + i * np.pi / n_points
+        angle = np.pi / 2 + i * np.pi / n_points
         r = outer_r if i % 2 == 0 else inner_r
-        star_x.append(center[0] + r * np.cos(angle))
-        star_y.append(center[1] + r * np.sin(angle))
+        star_x.append(cx + r * np.cos(angle))
+        star_y.append(cy + r * np.sin(angle))
     star_x.append(star_x[0]); star_y.append(star_y[0])
-    ax.fill(star_x, star_y, color='#546E7A', alpha=0.25, zorder=4)
-    ax.plot(star_x, star_y, color='#455A64', lw=0.8, alpha=0.6, zorder=4)
+    ax.fill(star_x, star_y, color='#546E7A', alpha=0.18, zorder=3)
+    ax.plot(star_x, star_y, color='#455A64', lw=0.8, alpha=0.5, zorder=3)
 
-    # ── Titles and descriptions ──
-
-    # Paradigm (outermost) — lowered
-    ax.text(5.0, 9.0, 'Paradigm dominance', ha='center', va='center',
-            fontsize=9.5, fontweight='bold', color='#263238', fontfamily='serif')
-    ax.text(5.0, 8.25, 'Discursive structure that persists\nlong after events and cascades are forgotten',
-            ha='center', va='center', fontsize=6.5, color='#607D8B',
-            fontfamily='serif', linespacing=1.4)
-
-    # Cascade (middle) — lowered
-    ax.text(5.0, 6.9, 'Media cascade', ha='center', va='center',
-            fontsize=9, fontweight='bold', color='#263238', fontfamily='serif')
-    ax.text(5.0, 6.25, 'Outlets converge on a frame\nthat may differ from the event\'s own',
-            ha='center', va='center', fontsize=6.5, color='#607D8B',
-            fontfamily='serif', linespacing=1.4)
-
-    # Event (on star) — darker color for legibility
-    ax.text(5.0, 4.85, 'Focusing event', ha='center', va='center',
-            fontsize=8.5, fontweight='bold', color='#263238', fontfamily='serif',
-            zorder=5)
-    ax.text(5.0, 4.05, 'An event occurs and focuses\nattention without determining\nits interpretation (frame)',
-            ha='center', va='center', fontsize=6.2, color='#37474F',
+    # ── Text INSIDE the star ──
+    ax.text(cx, cy + 0.45, 'Focusing event', ha='center', va='center',
+            fontsize=9, fontweight='bold', color='#263238', fontfamily='serif', zorder=5)
+    ax.text(cx, cy - 0.25, 'An event focuses attention\nwithout determining\nits interpretation',
+            ha='center', va='center', fontsize=6, color='#37474F',
             fontfamily='serif', linespacing=1.3, zorder=5)
 
-    # Order labels — right side, pointing to correct rings
-    # center=(5.0, 4.5), rings at r=4.4, 2.9, 1.4
-    # Compute x intersection of horizontal line at y with each circle
-    # x = cx + sqrt(r² - (y - cy)²)
-    cx, cy = center
-    ring_radii = [4.4, 2.9, 1.4]  # outer, middle, inner
-    order_labels = ['Third order', 'Second order', 'First order']
-    # Place labels at y positions where the line can intersect the ring
-    order_ys = [cy + 3.0, cy + 2.0, cy]  # adjusted to be within each ring
-    for txt, y_lbl, r in zip(order_labels, order_ys, ring_radii):
+    # ── Text INSIDE the cascade ring (upper band between star and outer ring) ──
+    ax.text(cx, cy + 2.45, 'Media cascade', ha='center', va='center',
+            fontsize=9, fontweight='bold', color='#263238', fontfamily='serif', zorder=2)
+    ax.text(cx, cy + 2.0, 'Outlets converge on a frame\nthat may differ from the event\'s own',
+            ha='center', va='center', fontsize=6, color='#607D8B',
+            fontfamily='serif', linespacing=1.3, zorder=2)
+
+    # ── Text INSIDE the paradigm ring (top band) ──
+    ax.text(cx, cy + 3.85, 'Paradigm dominance', ha='center', va='center',
+            fontsize=9.5, fontweight='bold', color='#263238', fontfamily='serif', zorder=2)
+    ax.text(cx, cy + 3.35, 'Discursive structure that persists\nafter events and cascades are forgotten',
+            ha='center', va='center', fontsize=6, color='#607D8B',
+            fontfamily='serif', linespacing=1.3, zorder=2)
+
+    # ── Order labels — outside the outer circle, dotted lines to mid-band ──
+    # Mid-band radii: paradigm band (2.9–4.4)=3.65, cascade band (1.8–2.9)=2.35, star=0.9
+    for txt, y_lbl, mid_r in [('Third order', cy + 3.0, 3.65),
+                               ('Second order', cy + 1.0, 2.35),
+                               ('First order', cy - 1.0, 0.9)]:
         dy = y_lbl - cy
-        if abs(dy) < r:
-            x_ring = cx + np.sqrt(r**2 - dy**2)
-        else:
-            x_ring = cx + r  # fallback
-        ax.text(10.2, y_lbl, txt, ha='right', va='center', fontsize=8,
+        x_mid = cx + np.sqrt(max(mid_r**2 - dy**2, 0)) if abs(dy) < mid_r else cx + mid_r
+        ax.text(11.5, y_lbl, txt, ha='right', va='center', fontsize=8,
                 color='#999', fontfamily='serif', fontstyle='italic')
-        ax.plot([10.22, x_ring], [y_lbl, y_lbl], color='#ccc', lw=0.4, ls=':', zorder=0)
+        ax.plot([11.52, x_mid], [y_lbl, y_lbl], color='#bbb', lw=0.8, ls=':', zorder=0)
 
-    # ── Structural persistence arrows ──
+    # ── Structural persistence arrows on outer ring (larger arcs) ──
     persistence_color = '#666666'
-    for angle, arc_rad in [(110, 0.25), (220, 0.25), (330, 0.25)]:
-        rad = np.radians(angle)
-        dr = 0.18
-        x1 = center[0] + 4.25 * np.cos(rad)
-        y1 = center[1] + 4.25 * np.sin(rad)
-        x2 = center[0] + 4.25 * np.cos(rad + dr)
-        y2 = center[1] + 4.25 * np.sin(rad + dr)
+    for angle in [125, 220, 330]:
+        rad = np.radians(angle); dr = 0.40
+        x1 = cx + 4.25 * np.cos(rad); y1 = cy + 4.25 * np.sin(rad)
+        x2 = cx + 4.25 * np.cos(rad + dr); y2 = cy + 4.25 * np.sin(rad + dr)
         ax.annotate('', xy=(x2, y2), xytext=(x1, y1),
-                    arrowprops=dict(arrowstyle='-|>', lw=0.9, color=persistence_color,
-                                    connectionstyle=f'arc3,rad={arc_rad}',
-                                    mutation_scale=7, alpha=0.7))
+                    arrowprops=dict(arrowstyle='-|>', lw=1.0, color=persistence_color,
+                                    connectionstyle='arc3,rad=0.30', mutation_scale=8, alpha=0.7))
 
-    # ── Three causal pathways ──
+    # ── Compute safe arrow targets using polar coordinates ──
     arr_kw = dict(arrowstyle='-|>', mutation_scale=9, lw=1.0)
+    star_r_val = 1.8; cascade_r_val = 2.9; paradigm_r_val = 4.4
+
+    # A: center → mid-cascade band, at 35° angle (lower-right, below text)
+    angle_a = np.radians(35)
+    a_r = (star_r_val + cascade_r_val) / 2  # 2.35 — middle of cascade band
+    a_end = (cx + a_r * np.cos(angle_a), cy + a_r * np.sin(angle_a))
 
     ax.annotate('',
-        xy=(7.7, 6.3), xytext=(6.8, 5.1),
-        arrowprops=dict(**arr_kw, color='#455A64', connectionstyle='arc3,rad=-0.15'))
-    ax.text(8.0, 5.5, 'A', ha='center', va='center', fontsize=7,
+        xy=a_end, xytext=(cx, cy),
+        arrowprops=dict(**arr_kw, color='#455A64', connectionstyle='arc3,rad=-0.12'))
+    ax.text(a_end[0] + 0.25, a_end[1] - 0.3, 'A', ha='center', va='center', fontsize=7,
             fontweight='bold', color='#455A64', fontfamily='serif')
 
-    ax.annotate('',
-        xy=(8.6, 8.0), xytext=(7.9, 6.7),
-        arrowprops=dict(**arr_kw, color='#455A64', connectionstyle='arc3,rad=-0.15'))
-    ax.text(8.8, 7.2, 'B', ha='center', va='center', fontsize=7,
-            fontweight='bold', color='#455A64', fontfamily='serif')
+    # B: from where A ends → mid-paradigm band, at 40° angle
+    angle_b = np.radians(40)
+    b_r = (cascade_r_val + paradigm_r_val) / 2  # 3.65 — middle of paradigm band
+    b_end = (cx + b_r * np.cos(angle_b), cy + b_r * np.sin(angle_b))
 
     ax.annotate('',
-        xy=(1.3, 8.0), xytext=(3.5, 4.2),
+        xy=b_end, xytext=a_end,
+        arrowprops=dict(**arr_kw, color='#455A64', connectionstyle='arc3,rad=-0.12'))
+    ax.text(b_end[0] + 0.25, b_end[1] - 0.3, 'B', ha='center', va='center', fontsize=7,
+            fontweight='bold', color='#455A64', fontfamily='serif')
+
+    # C: center → mid-paradigm band, at ~130° angle (upper-left, dashed)
+    angle_c = np.radians(130)
+    c_end = (cx + b_r * np.cos(angle_c), cy + b_r * np.sin(angle_c))
+
+    ax.annotate('',
+        xy=c_end, xytext=(cx, cy),
         arrowprops=dict(**arr_kw, color='#455A64', ls=(0, (4, 3)),
-                        connectionstyle='arc3,rad=-0.35'))
-    ax.text(1.1, 6.0, 'C', ha='center', va='center', fontsize=7,
+                        connectionstyle='arc3,rad=-0.30'))
+    ax.text(c_end[0] - 0.3, c_end[1] - 0.5, 'C', ha='center', va='center', fontsize=7,
             fontweight='bold', color='#455A64', fontfamily='serif')
 
-    # Legend — arrows, not lines
-    leg_x, leg_y = 5.0, -1.0
-    spacing = 0.35
-    arr_leg = dict(arrowstyle='-|>', mutation_scale=8, lw=1.0)
+    # ── Legend OUTSIDE the outer ring, well below ──
+    leg_x, leg_y = cx, cy - 5.5
+    spacing = 0.30
+    arr_leg = dict(arrowstyle='-|>', mutation_scale=7, lw=0.9)
 
-    ax.annotate('', xy=(leg_x-1.7, leg_y+spacing*2), xytext=(leg_x-2.5, leg_y+spacing*2),
+    ax.annotate('', xy=(leg_x - 1.5, leg_y + spacing * 2), xytext=(leg_x - 2.2, leg_y + spacing * 2),
                 arrowprops=dict(**arr_leg, color='#455A64'))
-    ax.text(leg_x-1.55, leg_y+spacing*2, 'A + B  Cascade-mediated paradigmatic effect', va='center',
-            fontsize=5.5, color='#455A64', fontfamily='serif')
-
-    ax.annotate('', xy=(leg_x-1.7, leg_y+spacing), xytext=(leg_x-2.5, leg_y+spacing),
-                arrowprops=dict(**arr_leg, color='#455A64', ls=(0,(4,3))))
-    ax.text(leg_x-1.55, leg_y+spacing, 'C  Direct paradigmatic effect (need not align with A + B)',
+    ax.text(leg_x - 1.35, leg_y + spacing * 2, 'A + B  Cascade-mediated paradigmatic effect',
             va='center', fontsize=5.5, color='#455A64', fontfamily='serif')
 
-    # Curved arrow for structural persistence legend
-    ax.annotate('', xy=(leg_x-1.7, leg_y), xytext=(leg_x-2.5, leg_y),
+    ax.annotate('', xy=(leg_x - 1.5, leg_y + spacing), xytext=(leg_x - 2.2, leg_y + spacing),
+                arrowprops=dict(**arr_leg, color='#455A64', ls=(0, (4, 3))))
+    ax.text(leg_x - 1.35, leg_y + spacing, 'C  Direct paradigmatic effect (need not align with A + B)',
+            va='center', fontsize=5.5, color='#455A64', fontfamily='serif')
+
+    ax.annotate('', xy=(leg_x - 1.5, leg_y), xytext=(leg_x - 2.2, leg_y),
                 arrowprops=dict(arrowstyle='-|>', mutation_scale=6, lw=0.8,
-                                color=persistence_color,
-                                connectionstyle='arc3,rad=0.3'))
-    ax.text(leg_x-1.55, leg_y, 'Other structural persistence forces (economic interests, etc.)',
+                                color=persistence_color, connectionstyle='arc3,rad=0.3'))
+    ax.text(leg_x - 1.35, leg_y, 'Structural persistence (economic interests, institutions)',
             va='center', fontsize=5.5, color=persistence_color, fontfamily='serif')
 
-    fig.savefig(OUT/'figure1_schema.pdf')
+    fig.savefig(OUT / 'figure1_schema.pdf')
     plt.close(fig)
     print("  -> figure1_schema.pdf")
 
