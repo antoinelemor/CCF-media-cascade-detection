@@ -71,6 +71,7 @@ from cascade_detector.core.constants import (
     EVENT_CLUSTER_SEMANTIC_WEIGHT,
     EVENT_CLUSTER_ENTITY_WEIGHT,
     EVENT_CLUSTER_ARTICLE_WEIGHT,
+    EVENT_CLUSTER_DEDUP_CONTAINMENT,
     EVENT_CLUSTER_TYPE_WEIGHT,
     EVENT_CLUSTER_TEMPORAL_SCALE,
     EVENT_CLUSTER_MIN_ENTITY_CITATIONS,
@@ -324,6 +325,11 @@ class EventOccurrenceDetector:
 
         # Update type_ranking on clusters using final occurrences' type_scores
         self._update_cluster_type_rankings(event_clusters, occurrences)
+
+        # Second dedup, on FINAL doc_ids (post soft-assignment). The Phase-3
+        # dedup keys on seeds and runs before inflation, so it cannot catch
+        # same-type clusters that only become near-identical after Phase 4.
+        self._deduplicate_event_clusters(event_clusters)
 
         logger.info(
             f"Final: {len(occurrences)} event occurrences, "
@@ -2168,6 +2174,96 @@ class EventOccurrenceDetector:
             occ.occurrence_id = i
 
         return deduplicated
+
+    @staticmethod
+    def _deduplicate_event_clusters(
+        event_clusters: List[EventCluster],
+        containment_threshold: float = EVENT_CLUSTER_DEDUP_CONTAINMENT,
+    ) -> List[EventCluster]:
+        """Collapse near-duplicate event clusters sharing most of their articles.
+
+        Complements _deduplicate_occurrences, which keys on seed_doc_ids and runs
+        in Phase 3 (before soft assignment). Several same-type clusters can be
+        seeded on DIFFERENT articles — so seed-Jaccard sees no overlap — yet Phase
+        4's soft assignment inflates them until they cover essentially the same
+        articles. This second pass runs on the FINAL doc_ids: grouping clusters by
+        dominant_type, it greedily keeps the strongest and absorbs any later
+        same-type cluster whose SMALLER realised article set is at least
+        ``containment_threshold`` contained in it. The absorbed cluster's
+        occurrences are merged into the representative, so no article is lost;
+        the representative keeps its own strength, peak_date and dominant_type.
+
+        Mutates ``event_clusters`` in place (and returns it). cluster_id values
+        are renumbered contiguously when anything is merged.
+        """
+        if len(event_clusters) <= 1:
+            return event_clusters
+
+        # Realised article set per cluster (union of its occurrences' doc_ids).
+        doc_sets: List[set] = []
+        for ec in event_clusters:
+            ids = set()
+            for occ in ec.occurrences:
+                ids.update(int(d) for d in occ.doc_ids)
+            doc_sets.append(ids)
+
+        by_type: Dict[str, List[int]] = {}
+        for i, ec in enumerate(event_clusters):
+            by_type.setdefault(ec.dominant_type, []).append(i)
+
+        absorbed = [False] * len(event_clusters)
+        n_merged = 0
+
+        for _type, idxs in by_type.items():
+            # Strongest (then largest, then most massive) first — best rep.
+            idxs.sort(
+                key=lambda i: (event_clusters[i].strength,
+                               len(doc_sets[i]),
+                               event_clusters[i].total_mass),
+                reverse=True,
+            )
+            for a_pos in range(len(idxs)):
+                i = idxs[a_pos]
+                if absorbed[i]:
+                    continue
+                rep = event_clusters[i]
+                for b_pos in range(a_pos + 1, len(idxs)):
+                    j = idxs[b_pos]
+                    if absorbed[j]:
+                        continue
+                    cand_ids = doc_sets[j]
+                    smaller = min(len(doc_sets[i]), len(cand_ids))
+                    if smaller == 0:
+                        continue
+                    shared = len(doc_sets[i] & cand_ids)
+                    if shared / smaller >= containment_threshold:
+                        # Absorb candidate: fold its occurrences into rep so the
+                        # union of articles is preserved.
+                        seen = {id(o) for o in rep.occurrences}
+                        for o in event_clusters[j].occurrences:
+                            if id(o) not in seen:
+                                rep.occurrences.append(o)
+                                seen.add(id(o))
+                        rep.n_occurrences = len(rep.occurrences)
+                        rep.total_mass = sum(o.effective_mass for o in rep.occurrences)
+                        rep.event_types = {o.event_type for o in rep.occurrences}
+                        rep.is_multi_type = len(rep.event_types) > 1
+                        doc_sets[i] = doc_sets[i] | cand_ids
+                        absorbed[j] = True
+                        n_merged += 1
+
+        if n_merged:
+            n_before = len(event_clusters)
+            kept = [ec for k, ec in enumerate(event_clusters) if not absorbed[k]]
+            for i, ec in enumerate(kept):
+                ec.cluster_id = i
+            event_clusters[:] = kept
+            logger.info(
+                f"Cluster dedup (final doc_ids, containment>={containment_threshold}): "
+                f"merged {n_merged} near-duplicate cluster(s), "
+                f"{n_before} -> {len(event_clusters)}"
+            )
+        return event_clusters
 
     def _occurrence_distance(
         self,

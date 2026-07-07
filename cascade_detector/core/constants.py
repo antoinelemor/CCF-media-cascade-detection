@@ -219,6 +219,14 @@ EVENT_CLUSTER_TYPE_WEIGHT = 0.10       # event type: 0=same, 1=different
 EVENT_CLUSTER_TEMPORAL_SCALE = 14.0    # days for temporal distance decay (unified with Phase 4)
 EVENT_CLUSTER_MIN_ENTITY_CITATIONS = 3 # min citations per entity within occurrence
 
+# Post-Phase-4 near-duplicate collapse (final doc_ids). Several same-type
+# clusters can be seeded on DIFFERENT articles — so the Phase-3 seed-Jaccard
+# dedup (_deduplicate_occurrences) misses them — yet Phase-4 soft assignment
+# inflates them until they cover essentially the same articles. Collapse a
+# cluster into a stronger same-type one when the SMALLER cluster's realised
+# article set is at least this fraction contained in the larger's.
+EVENT_CLUSTER_DEDUP_CONTAINMENT = 0.70
+
 # Post-processing: title+temporal connectivity (Step 6b)
 EVENT_CLUSTER_TITLE_SIM_THRESHOLD = 0.50   # min cosine sim between title centroids
 EVENT_CLUSTER_MAX_GAP_DAYS = 30            # max peak gap for title-only connectivity
