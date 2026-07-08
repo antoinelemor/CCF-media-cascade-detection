@@ -227,6 +227,15 @@ EVENT_CLUSTER_MIN_ENTITY_CITATIONS = 3 # min citations per entity within occurre
 # article set is at least this fraction contained in the larger's.
 EVENT_CLUSTER_DEDUP_CONTAINMENT = 0.70
 
+# The same real-world event also splits ACROSS dominant types (e.g. a storm
+# spawning an evt_weather cluster and an evt_policy cluster over the same
+# articles — observed containments of 1.00). Multi-type meta-events are native
+# to Phase 3, so such pairs are one event the clustering failed to unify.
+# Cross-type absorption uses the same containment threshold but additionally
+# requires the peaks to be close (guards against merging a later, genuinely
+# distinct reaction that happens to reuse the same articles).
+EVENT_CLUSTER_DEDUP_CROSS_TYPE_MAX_GAP_DAYS = 14.0
+
 # Post-processing: title+temporal connectivity (Step 6b)
 EVENT_CLUSTER_TITLE_SIM_THRESHOLD = 0.50   # min cosine sim between title centroids
 EVENT_CLUSTER_MAX_GAP_DAYS = 30            # max peak gap for title-only connectivity
