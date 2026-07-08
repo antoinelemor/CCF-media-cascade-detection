@@ -2389,7 +2389,16 @@ class EventOccurrenceDetector:
         if m < 4:
             return None, -1.0
         cond = squareform(dist_square, checks=False)
-        Z = linkage(cond, method='average')
+        # COMPLETE linkage (not average): the refinement exists precisely to
+        # undo CHAINING — generic bridge articles (national round-ups covering
+        # heat AND storms) sit between stories and keep average-linkage
+        # clusters welded. Complete linkage merges only when ALL pairs are
+        # close, so bridges attach to their nearest story instead of gluing
+        # stories together. Verified on the July 2026 blob (68 docs): average
+        # peeled a single outlier (silhouette 0.44, useless) while complete
+        # cleanly separated the European heat-wave coverage from the Canadian
+        # storm/flood wave (silhouette 0.31).
+        Z = linkage(cond, method='complete')
         cuts = []          # (k_effectif, score, labels)
         for k in range(2, m):
             labels = fcluster(Z, t=k, criterion='maxclust')
