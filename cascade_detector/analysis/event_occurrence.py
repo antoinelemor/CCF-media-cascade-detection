@@ -2207,8 +2207,8 @@ class EventOccurrenceDetector:
         in Phase 3 (before soft assignment). Several clusters can be seeded on
         DIFFERENT articles — so seed-Jaccard sees no overlap — yet Phase 4's soft
         assignment inflates them until they cover essentially the same articles.
-        This second pass runs on the FINAL doc_ids: a single global pass, from
-        strongest to weakest, greedily keeps the strongest and absorbs any later
+        This second pass runs on the FINAL doc_ids: global passes, from
+        strongest to weakest, greedily keep the strongest and absorb any later
         cluster whose SMALLER realised article set is at least
         ``containment_threshold`` contained in it — for SAME dominant_type with
         no temporal restriction (same coverage is the same event whatever the
@@ -2217,6 +2217,14 @@ class EventOccurrenceDetector:
         Phase 3: an evt_weather and an evt_policy cluster over the same articles
         and days is one real-world event the clustering failed to unify; a
         distant peak, however, may be a genuinely distinct follow-up).
+
+        The pass REPEATS until a fixed point: absorbing a cluster GROWS the
+        representative's article set, so a pair tested (and rejected) earlier
+        in the same pass can exceed the threshold afterwards — a single pass
+        does not converge (observed July 8 2026: four same-type pairs at
+        containment 0.71-1.00 survived one pass). Each extra pass merges at
+        least one cluster or stops, so termination is bounded by the cluster
+        count.
 
         The absorbed cluster's occurrences are merged into the representative,
         so no article is lost; the representative keeps its own strength,
@@ -2255,46 +2263,54 @@ class EventOccurrenceDetector:
         absorbed = [False] * len(event_clusters)
         n_merged = 0
         n_cross = 0
+        n_passes = 0
 
-        for a_pos in range(len(idxs)):
-            i = idxs[a_pos]
-            if absorbed[i]:
-                continue
-            rep = event_clusters[i]
-            for b_pos in range(a_pos + 1, len(idxs)):
-                j = idxs[b_pos]
-                if absorbed[j]:
+        while True:
+            n_passes += 1
+            pass_merged = 0
+            for a_pos in range(len(idxs)):
+                i = idxs[a_pos]
+                if absorbed[i]:
                     continue
-                cand = event_clusters[j]
-                cand_ids = doc_sets[j]
-                smaller = min(len(doc_sets[i]), len(cand_ids))
-                if smaller == 0:
-                    continue
-                shared = len(doc_sets[i] & cand_ids)
-                if shared / smaller < containment_threshold:
-                    continue
-                same_type = cand.dominant_type == rep.dominant_type
-                if not same_type:
-                    gap = abs((pd.Timestamp(rep.peak_date)
-                               - pd.Timestamp(cand.peak_date)).days)
-                    if gap > cross_type_max_gap_days:
+                rep = event_clusters[i]
+                for b_pos in range(a_pos + 1, len(idxs)):
+                    j = idxs[b_pos]
+                    if absorbed[j]:
                         continue
-                # Absorb candidate: fold its occurrences into rep so the
-                # union of articles is preserved.
-                seen = {id(o) for o in rep.occurrences}
-                for o in cand.occurrences:
-                    if id(o) not in seen:
-                        rep.occurrences.append(o)
-                        seen.add(id(o))
-                rep.n_occurrences = len(rep.occurrences)
-                rep.total_mass = sum(o.effective_mass for o in rep.occurrences)
-                rep.event_types = {o.event_type for o in rep.occurrences}
-                rep.is_multi_type = len(rep.event_types) > 1
-                doc_sets[i] = doc_sets[i] | cand_ids
-                absorbed[j] = True
-                n_merged += 1
-                if not same_type:
-                    n_cross += 1
+                    cand = event_clusters[j]
+                    cand_ids = doc_sets[j]
+                    smaller = min(len(doc_sets[i]), len(cand_ids))
+                    if smaller == 0:
+                        continue
+                    shared = len(doc_sets[i] & cand_ids)
+                    if shared / smaller < containment_threshold:
+                        continue
+                    same_type = cand.dominant_type == rep.dominant_type
+                    if not same_type:
+                        gap = abs((pd.Timestamp(rep.peak_date)
+                                   - pd.Timestamp(cand.peak_date)).days)
+                        if gap > cross_type_max_gap_days:
+                            continue
+                    # Absorb candidate: fold its occurrences into rep so the
+                    # union of articles is preserved.
+                    seen = {id(o) for o in rep.occurrences}
+                    for o in cand.occurrences:
+                        if id(o) not in seen:
+                            rep.occurrences.append(o)
+                            seen.add(id(o))
+                    rep.n_occurrences = len(rep.occurrences)
+                    rep.total_mass = sum(o.effective_mass
+                                         for o in rep.occurrences)
+                    rep.event_types = {o.event_type for o in rep.occurrences}
+                    rep.is_multi_type = len(rep.event_types) > 1
+                    doc_sets[i] = doc_sets[i] | cand_ids
+                    absorbed[j] = True
+                    pass_merged += 1
+                    if not same_type:
+                        n_cross += 1
+            n_merged += pass_merged
+            if not pass_merged:
+                break
 
         if n_merged:
             n_before = len(event_clusters)
@@ -2305,7 +2321,8 @@ class EventOccurrenceDetector:
             logger.info(
                 f"Cluster dedup (final doc_ids, containment>={containment_threshold}): "
                 f"merged {n_merged} near-duplicate cluster(s) "
-                f"({n_cross} cross-type, peak gap<={cross_type_max_gap_days:g}d), "
+                f"({n_cross} cross-type, peak gap<={cross_type_max_gap_days:g}d, "
+                f"{n_passes} pass(es) to fixed point), "
                 f"{n_before} -> {len(event_clusters)}"
             )
         return event_clusters
