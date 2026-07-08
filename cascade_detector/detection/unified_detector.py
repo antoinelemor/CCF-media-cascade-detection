@@ -212,12 +212,28 @@ class UnifiedCascadeDetector:
         if prop_series is None or count_series is None or total_series is None:
             return []
 
-        # Baseline = year-level proportion (volume-weighted, matching sandbox DB query)
+        # Fallback baseline = run-level proportion (volume-weighted)
         total_count = float(count_series.sum())
         total_total = float(total_series.sum())
         baseline_prop = total_count / total_total if total_total > 0 else 0.0
         if baseline_prop <= 0:
             return []
+
+        # LOCAL trailing baseline series (same concept as the signal's rolling
+        # z-score): proportion over the trailing `proptest_local_baseline_days`,
+        # shifted by a guard gap so a burst never sits in its own baseline.
+        # NaN / thin-history days fall back to the run-level proportion.
+        cfg_l = self.config
+        _roll_k = count_series.rolling(window=cfg_l.proptest_local_baseline_days,
+                                       min_periods=cfg_l.proptest_local_baseline_days // 2).sum()
+        _roll_n = total_series.rolling(window=cfg_l.proptest_local_baseline_days,
+                                       min_periods=cfg_l.proptest_local_baseline_days // 2).sum()
+        _shift = cfg_l.proptest_baseline_guard_days + 1
+        _local = (_roll_k / _roll_n.clip(lower=1.0)).shift(_shift)
+        _thin = _roll_n.shift(_shift) < cfg_l.proptest_min_baseline_total
+        _local[_thin] = np.nan
+        self._local_base_series = _local.clip(lower=1e-6)
+        self._fallback_baseline = baseline_prop
 
         # Step 1: PELT on smoothed composite → elevated segments
         pelt_segments = self._pelt_segments(composite)
@@ -270,6 +286,31 @@ class UnifiedCascadeDetector:
                 count_series, total_series, period['start'], period['end'], baseline_prop
             )
             final.append({**period, **stats})
+
+        # Benjamini-Hochberg across the frame's final windows: the pipeline
+        # tests many candidate windows per frame (PELT segments, refinements,
+        # multi-scale sliding windows) — without FDR control the expected
+        # number of false bursts grows with the window count. Applied at the
+        # END (final merged list) so the family is well-defined.
+        if final:
+            pvals = np.array([f.get('pvalue', 1.0) for f in final])
+            m_tests = len(pvals)
+            order = np.argsort(pvals)
+            keep = np.zeros(m_tests, dtype=bool)
+            prev_q = 1.0
+            qvals = np.empty(m_tests)
+            for rank in range(m_tests - 1, -1, -1):
+                i = order[rank]
+                prev_q = min(prev_q, pvals[i] * m_tests / (rank + 1))
+                qvals[i] = prev_q
+            keep = qvals < self.config.proptest_fdr_alpha
+            dropped = int((~keep).sum())
+            if dropped:
+                logger.info(
+                    f"{frame}: BH-FDR dropped {dropped}/{m_tests} final windows "
+                    f"(q >= {self.config.proptest_fdr_alpha})"
+                )
+            final = [f for f, k in zip(final, keep) if k]
 
         # Build BurstResult objects
         bursts = []
@@ -371,6 +412,21 @@ class UnifiedCascadeDetector:
 
         return merged
 
+    def _baseline_at(self, when, fallback=None):
+        """LOCAL trailing baseline at a date (see _detect_from_composite);
+        falls back to the run-level proportion when history is thin."""
+        fb = self._fallback_baseline if fallback is None else fallback
+        series = getattr(self, '_local_base_series', None)
+        if series is None:
+            return fb
+        try:
+            v = series.asof(pd.Timestamp(when))
+        except (KeyError, TypeError):
+            return fb
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return fb
+        return float(v)
+
     def _proportion_test(
         self,
         count_series: pd.Series,
@@ -419,13 +475,22 @@ class UnifiedCascadeDetector:
         end: pd.Timestamp,
         baseline_prop: float,
     ) -> Tuple[bool, Dict[str, float]]:
-        """Accept criterion: p < alpha AND (h > h_min OR ratio > r_min)."""
-        stats = self._proportion_test(count_series, total_series, start, end, baseline_prop)
+        """Accept criterion: p < alpha AND (h > h_min OR ratio > r_min).
+
+        The reference proportion is the LOCAL trailing baseline at the
+        segment start (guard-gapped); `baseline_prop` only serves as the
+        fallback when local history is insufficient."""
+        local_prop = self._baseline_at(start, fallback=baseline_prop)
+        stats = self._proportion_test(count_series, total_series, start, end, local_prop)
         cfg = self.config
+        # Conjunction (AND), not disjunction: with 'h OR ratio', the tiny
+        # Cohen's h floor (0.05) alone admitted modest regime drifts as
+        # bursts (e.g. +46% over a mixed baseline). A burst must be BOTH
+        # statistically significant AND a marked relative elevation.
         accepted = (
             stats['pvalue'] < cfg.proptest_alpha
-            and (stats['cohen_h'] > cfg.proptest_min_cohen_h
-                 or stats['ratio'] > cfg.proptest_min_ratio)
+            and stats['cohen_h'] > cfg.proptest_min_cohen_h
+            and stats['ratio'] > cfg.proptest_min_ratio
         )
         return accepted, stats
 
@@ -531,7 +596,9 @@ class UnifiedCascadeDetector:
                 if rt < 1 or np.isnan(rc) or np.isnan(rt):
                     continue
                 obs_prop = rc / rt
-                if obs_prop <= baseline_prop:
+                _lb = self._baseline_at(count_series.index[i - ws + 1],
+                                        fallback=baseline_prop)
+                if obs_prop <= _lb:
                     continue
 
                 cohen_h = 2.0 * (np.arcsin(np.sqrt(np.clip(obs_prop, 0, 1)))
@@ -614,7 +681,7 @@ class UnifiedCascadeDetector:
                 candidate = start - pd.Timedelta(days=i)
                 if candidate not in smoothed.index:
                     break
-                if smoothed[candidate] > baseline_prop:
+                if smoothed[candidate] > self._baseline_at(candidate, fallback=baseline_prop):
                     new_start = candidate
                     gap_count = 0
                 else:
@@ -629,7 +696,7 @@ class UnifiedCascadeDetector:
                 candidate = end + pd.Timedelta(days=i)
                 if candidate not in smoothed.index:
                     break
-                if smoothed[candidate] > baseline_prop:
+                if smoothed[candidate] > self._baseline_at(candidate, fallback=baseline_prop):
                     new_end = candidate
                     gap_count = 0
                 else:

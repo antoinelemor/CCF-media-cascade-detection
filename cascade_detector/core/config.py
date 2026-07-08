@@ -49,6 +49,19 @@ class DetectorConfig:
     pelt_min_size: int = 7               # minimum PELT segment size (days)
     pelt_elevation_threshold: float = 0.3  # elevated segment cutoff: mean + threshold × std
     proptest_alpha: float = 0.01         # significance level for binomial proportion test
+    # LOCAL trailing baseline for burst validation. The composite SIGNAL flags
+    # anomalies against a trailing 90-day baseline; validating candidate
+    # segments against the GLOBAL run-level proportion was inconsistent with
+    # that definition and anti-conservative under secular trends (a window in
+    # a structurally elevated regime passed without any LOCAL burst —
+    # independent re-test July 2026: only 26/76 live cascades survived a
+    # trailing-baseline binomial test with BH-FDR). Validation now uses the
+    # same trailing-baseline concept as the signal, with a guard gap so the
+    # burst does not contaminate its own baseline.
+    proptest_local_baseline_days: int = 90
+    proptest_baseline_guard_days: int = 7
+    proptest_min_baseline_total: int = 200   # min articles in local baseline, else fallback
+    proptest_fdr_alpha: float = 0.05         # Benjamini-Hochberg across final windows (per frame)
     proptest_min_cohen_h: float = 0.05   # minimum effect size (Cohen's h)
     proptest_min_ratio: float = 1.5      # minimum proportion ratio above baseline
     min_burst_days: int = 3
