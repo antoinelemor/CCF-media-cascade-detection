@@ -1951,6 +1951,25 @@ class EventOccurrenceDetector:
             else:
                 best_labels = np.arange(1, n + 1)
 
+        # Step 4b: RECURSIVE silhouette refinement of each cluster.
+        #
+        # The single global silhouette cut captures the corpus's MACRO structure
+        # (event types separate cleanly: the type dimension adds a constant
+        # cross-type offset and same-window occurrences of one type sit in a
+        # tight distance band). Distinct same-type stories then end up welded
+        # into one cluster — observed July 2026: 18 evt_weather occurrences
+        # (Prairie storms/floods, Ontario heat wave, the French air-conditioning
+        # debate) merged into a single "Severe Storms and Flooding in Western
+        # Canada" event, even though their doc embeddings separate them plainly
+        # (intra-story mean cosine 0.87-0.92 vs cross-story 0.74).
+        #
+        # Refinement re-applies the SAME optimal-k silhouette search WITHIN each
+        # cluster, recursively, and accepts a sub-partition only when its
+        # silhouette exceeds REFINE_MIN_SILHOUETTE. A cluster is final when no
+        # significant internal structure remains — a deterministic, purely
+        # partitional step: every occurrence is kept, nothing is discarded.
+        best_labels = self._refine_labels_recursive(dist_square, np.asarray(best_labels))
+
         # Step 5: Group occurrences by cluster label
         cluster_groups: Dict[int, List[EventOccurrence]] = {}
         for occ, label in zip(all_occurrences, best_labels):
@@ -2290,6 +2309,88 @@ class EventOccurrenceDetector:
                 f"{n_before} -> {len(event_clusters)}"
             )
         return event_clusters
+
+    # --- Step 4b helpers: recursive silhouette refinement -------------------
+    # A cluster is split while a sub-partition with silhouette >
+    # REFINE_MIN_SILHOUETTE exists; clusters below REFINE_MIN_SIZE cannot be
+    # meaningfully assessed (silhouette needs >= 2 groups of >= 2);
+    # REFINE_MAX_DEPTH is a safety bound (never reached in practice — each
+    # split strictly shrinks clusters).
+    #
+    # Threshold calibration (Monte-Carlo on the compound-distance geometry
+    # observed July 2026 — intra-story ~0.40, cross-story same-type ~0.65,
+    # noise sigma 0.03-0.08): spurious best-silhouette on HOMOGENEOUS clusters
+    # peaks at p99 = 0.225 (n=4, worst case), while genuine story splits score
+    # p5 = 0.339. 0.28 separates the two regimes with margin on both sides.
+    REFINE_MIN_SILHOUETTE = 0.28
+    REFINE_MIN_SIZE = 4
+    REFINE_MAX_DEPTH = 6
+
+    def _refine_labels_recursive(self, dist_square: np.ndarray,
+                                 labels: np.ndarray) -> np.ndarray:
+        """Recursively re-cut every cluster while significant internal
+        structure remains. Purely partitional: |occurrences| is invariant."""
+        labels = labels.copy()
+        next_label = int(labels.max()) + 1
+        frontier = [(lab, 0) for lab in sorted(set(labels.tolist()))]
+        while frontier:
+            lab, depth = frontier.pop()
+            if depth >= self.REFINE_MAX_DEPTH:
+                continue
+            members = np.where(labels == lab)[0]
+            if len(members) < self.REFINE_MIN_SIZE:
+                continue
+            sub = dist_square[np.ix_(members, members)]
+            sub_labels, sub_score = self._best_silhouette_cut(sub)
+            if sub_labels is None or sub_score <= self.REFINE_MIN_SILHOUETTE:
+                continue                       # pas de structure interne : final
+            logger.info(
+                f"Phase 4 refinement: splitting cluster of {len(members)} "
+                f"occurrences into {len(set(sub_labels.tolist()))} "
+                f"(silhouette {sub_score:.3f})"
+            )
+            new_labs = []
+            for sl in sorted(set(sub_labels.tolist())):
+                sel = members[sub_labels == sl]
+                labels[sel] = next_label
+                new_labs.append(next_label)
+                next_label += 1
+            frontier.extend((nl, depth + 1) for nl in new_labs)
+        return labels
+
+    @staticmethod
+    def _best_silhouette_cut(dist_square: np.ndarray,
+                             parsimony_eps: float = 0.02):
+        """Optimal-k silhouette search (same criterion as the global cut),
+        on a precomputed distance matrix, with a PARSIMONY rule: among the
+        cuts whose silhouette is within `parsimony_eps` of the maximum, the
+        SMALLEST k wins — noise can nudge a needlessly fine partition a few
+        thousandths above the natural one; preferring the coarsest
+        near-optimal cut avoids benign but pointless fragmentation.
+        Returns (labels, score) or (None, -1)."""
+        m = dist_square.shape[0]
+        if m < 4:
+            return None, -1.0
+        cond = squareform(dist_square, checks=False)
+        Z = linkage(cond, method='average')
+        cuts = []          # (k_effectif, score, labels)
+        for k in range(2, m):
+            labels = fcluster(Z, t=k, criterion='maxclust')
+            n_eff = len(set(labels.tolist()))
+            if n_eff < 2:
+                continue
+            try:
+                score = silhouette_score(dist_square, labels, metric='precomputed')
+            except ValueError:
+                continue
+            cuts.append((n_eff, score, labels))
+        if not cuts:
+            return None, -1.0
+        best_score = max(s for _n, s, _l in cuts)
+        n_eff, score, labels = min(
+            (c for c in cuts if c[1] >= best_score - parsimony_eps),
+            key=lambda c: c[0])
+        return labels, score
 
     def _occurrence_distance(
         self,
