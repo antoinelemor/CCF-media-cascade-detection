@@ -1,6 +1,22 @@
-# CCF Media Cascade Detection Framework
+<div align="center">
 
-A scientific framework for detecting and scoring information cascades in large-scale media corpora, built for the [Canadian Climate Framing (CCF) project](https://ccf-project.ca).
+<a href="https://ccf-project.ca">
+  <img src="https://ccf-project.ca/static/assets/logos/ccf_icone.png" alt="Canadian Climate Framing" width="130">
+</a>
+
+# CCF Media Cascade Detection
+
+**A scientific framework for detecting and scoring information cascades and news events in large-scale media corpora, built for the [Canadian Climate Framing project](https://ccf-project.ca).**
+
+*A lighthouse on Canada's climate coverage*
+
+[![Website](https://img.shields.io/badge/Website-ccf--project.ca-0f8a76?style=flat-square)](https://ccf-project.ca)
+[![Live observatory](https://img.shields.io/badge/Live-observatory-12b48c?style=flat-square)](https://ccf-project.ca/observatory)
+[![Data platform](https://img.shields.io/badge/Data-data.ccf--project.ca-0e2a47?style=flat-square)](https://data.ccf-project.ca)
+
+</div>
+
+---
 
 ## Overview
 
