@@ -116,6 +116,7 @@ class CascadeDetectionPipeline:
 
     def run(self, start_date: str, end_date: str,
             target_end_date: Optional[str] = None,
+            target_start_date: Optional[str] = None,
             frames: Optional[List[str]] = None,
             checkpoint_dir: Optional[Union[str, Path]] = None) -> DetectionResults:
         """Run the full cascade detection pipeline.
@@ -137,6 +138,12 @@ class CascadeDetectionPipeline:
 
         if target_end_date is None:
             target_end_date = end_date
+        # Baseline preload: data may be loaded BEFORE the analysis period so
+        # the trailing local baseline (90d + 7d guard) exists from day one of
+        # the target period. Cascades/events detected inside the preload are
+        # trimmed below — they belong to the previous period.
+        if target_start_date is None:
+            target_start_date = start_date
 
         if frames:
             self.config.frames = frames
@@ -215,7 +222,7 @@ class CascadeDetectionPipeline:
             all_bursts=bursts,
             n_cascades_by_frame=n_by_frame,
             n_cascades_by_classification=n_by_class,
-            analysis_period=(start_date, target_end_date),
+            analysis_period=(target_start_date, target_end_date),
             n_articles_analyzed=len(articles),
             runtime_seconds=elapsed,
             detection_parameters=self.config.to_dict().get('detection', {}),
@@ -264,6 +271,30 @@ class CascadeDetectionPipeline:
         # Store indices and articles on results for production export
         results._indices = indices
         results._articles = articles
+
+        # Trim cascades to target period (baseline preload at the start)
+        if target_start_date != start_date:
+            trim_start = pd.Timestamp(target_start_date)
+            n_before = len(results.cascades)
+            results.cascades = [
+                c for c in results.cascades
+                if pd.Timestamp(c.onset_date) >= trim_start
+            ]
+            results.all_bursts = [
+                b for b in results.all_bursts
+                if pd.Timestamp(b.onset_date) >= trim_start
+            ]
+            if getattr(results, 'event_clusters', None):
+                results.event_clusters = [
+                    ec for ec in results.event_clusters
+                    if pd.Timestamp(getattr(ec, 'peak_date', target_start_date)) >= trim_start
+                ]
+            n_trimmed = n_before - len(results.cascades)
+            if n_trimmed > 0:
+                logger.info(
+                    f"  Trimmed {n_trimmed} preload-period cascades "
+                    f"(onset < {target_start_date})"
+                )
 
         # Trim cascades to target period (for year-boundary handling)
         if target_end_date != end_date:

@@ -852,7 +852,13 @@ def main():
         logger.info(f"{'=' * 70}")
 
         try:
-            start_date = f'{year}-01-01'
+            # Baseline preload: load ~100 days of the previous year so the
+            # trailing local baseline of burst validation exists from Jan 1
+            # (otherwise every January regresses to the anti-conservative
+            # global-proportion fallback). Detections inside the preload are
+            # trimmed by target_start_date.
+            start_date = f'{year - 1}-09-23' if year > args.start else f'{year}-01-01'
+            target_start = f'{year}-01-01'
             end_date = f'{year}-12-31'
             # Extend 6 weeks into next year to capture boundary cascades
             if year < args.end:
@@ -867,6 +873,7 @@ def main():
             checkpoint_dir = year_dir / '.checkpoint'
             results = pipeline.run(start_date, extended_end,
                                    target_end_date=end_date,
+                                   target_start_date=target_start,
                                    checkpoint_dir=checkpoint_dir)
 
             # Flag low-activity years
