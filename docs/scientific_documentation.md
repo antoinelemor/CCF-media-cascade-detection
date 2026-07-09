@@ -697,6 +697,19 @@ Both methods produce boolean flag series converted to temporal periods $[start, 
 2. **Merge**: Adjacent periods within 3 days (`burst_merge_gap_days`) are merged — a 1-day dip in the middle of a cascade should not split it into two separate events
 3. **Extend onsets**: Each period's start is extended backward up to 14 days (`onset_lookback_days`), walking back while the composite signal remains > 0. This captures the rising edge of cascades
 
+#### Statistical validation of candidate windows (v2, July 2026)
+
+Detection proposes; an article-level proportion test disposes. Every candidate window must pass a **conjunctive acceptance** before entering the scoring pipeline, and again on its final extent after boundary extension:
+
+1. **Local trailing baseline.** The expected frame proportion $p_0$ is the trailing 90-day article-level proportion ending 8 days before the window onset (`proptest_local_baseline_days = 90`, `proptest_baseline_guard_days = 7`). A rising regime is thereby its own baseline: slow drifts cannot register as bursts. If the local history contains fewer than `proptest_min_baseline_total = 200` articles, the whole-period mean is used as fallback.
+2. **Conjunctive acceptance.** With $k$ frame-articles among $n$ articles in the window, the window is accepted iff the one-sided binomial $p < 0.01$ **and** Cohen's $h > 0.05$ **and** $\frac{k/n}{p_0} \ge 1.5$. The conjunction is essential: with $n$ in the hundreds, significance alone admits diluted +10% elevations.
+3. **Per-frame BH-FDR.** Benjamini–Hochberg at $\alpha = 0.05$ across all windows tested within a frame controls the growth of false discoveries with the number of candidates.
+4. **Final-extent re-validation.** Boundary extension and re-merge can stretch a window beyond its core burst; each window is re-tested on its final extent and dropped if the conjunction fails there (July 2026: 53-day windows whose weekly ratios never exceeded 1.34 were being served on p-value alone).
+
+Counts at every step are **unique articles per day** — the temporal index aggregates `doc_id`s, not sentence rows, so long articles cannot inflate proportions.
+
+**Baseline preload** (`target_start_date`): production runs load ~100 days of data before the analysis period so that the local baseline exists from the first analyzed day; cascades, bursts and event clusters whose onset/peak falls inside the preload are trimmed. Year-by-year runs would otherwise regress to the global-mean fallback every January.
+
 ### 5.9 BurstResult Properties
 
 For each detected period $[t_{\text{onset}}, t_{\text{end}}]$, a `BurstResult` is constructed:
@@ -1411,6 +1424,24 @@ $$
 $$
 
 **Iterative refinement**: 2 iterations (constant `PHASE4_N_ITERATIONS`). After each iteration, cluster centroids are recomputed as belonging-weighted × evt_mean-weighted averages.
+
+### 9.6.1 Phase 4b: Recursive Silhouette Refinement (v2, July 2026)
+
+Phase 4's occurrence-level HAC with a single global silhouette-optimal cut systematically under-splits: with $K$ clusters of which one is a mixture, the mixture's contribution to the global silhouette is $O(1/K)$ — the metric barely moves whether it is split or not. Phase 4b therefore re-examines **each cluster independently**:
+
+- **Complete linkage** on occurrence distances (anti-chaining: a bridge occurrence cannot weld two stories).
+- A split is accepted while the best cut's silhouette exceeds `REFINE_MIN_SILHOUETTE = 0.28`, recursively, down to `REFINE_MIN_SIZE = 4` and at most `REFINE_MAX_DEPTH = 6` levels.
+- **Monte-Carlo calibration** of the threshold: on homogeneous same-story clusters, the spurious best-cut silhouette has p99 = 0.225; on labelled two-story mixtures, the true-cut silhouette has p5 = 0.339 — 0.28 sits between with margin on both sides.
+- **Parsimony rule**: among cuts within 0.02 of the best silhouette, the smallest $k$ is chosen (residual over-splitting produces pure fragments, never mixtures — the benign direction).
+
+### 9.6.2 Step 7: Article-Level Coherence Gate (v2, July 2026)
+
+Occurrence centroids blur article-level structure: a cluster whose occurrences average two stories can look homogeneous at the occurrence level while its articles separate cleanly. After deduplication, every event cluster with ≥ `ARTICLE_GATE_MIN_DOCS = 4` articles passes a two-step gate operating directly on **article embeddings** (canonical integer `doc_id` lookups — pandas float64 upcasts produce `str(float)` forms like `'12345.0'` that silently miss the index otherwise):
+
+- **(A) Shatter** — the Phase 4b recursion applied unconstrained to article cosine distances. Provably pure (never welds distinct stories) but over-fine at article granularity: near-duplicate wire copies split off as pairs, because intra-story article distances (~0.10) sit far below the occurrence-calibrated threshold.
+- **(B) Regroup** — complete linkage on shard **centroids** with a diameter cutoff `ARTICLE_GATE_MERGE_DIAMETER = 0.16` (every pair of shards within a story satisfies centroid similarity ≥ 0.84). Complete linkage bounds the diameter, so a bridge shard may join one story but can never chain two stories whose mutual distance exceeds the cutoff — the failure mode that defeats both single-linkage components (chaining through bridge articles at T = 0.87) and pairwise thresholds (intra-story minimum 0.771 overlaps cross-story maximum 0.792).
+
+Calibration sweep on a labelled 64-article production mixture (15+ distinct stories): t ∈ [0.10, 0.20] yields 27→12 events, all pure; t = 0.16 matches the editorially exact story partition. Occurrences are copied per side with intersected doc lists (`dataclasses.replace`), so **no article is lost** by the gate.
 
 ### 9.7 Confidence Scoring
 
