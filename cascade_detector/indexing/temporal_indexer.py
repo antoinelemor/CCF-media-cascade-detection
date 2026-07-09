@@ -158,14 +158,25 @@ class TemporalIndexer(AbstractIndexer):
             freq='D'
         )
         
-        # Daily counts
+        # Daily counts — ARTICLE-level (unique doc_ids carrying the frame).
+        # The burst validation (proportion tests) and the burst-article
+        # extraction (_get_burst_articles) must count the SAME unit: counting
+        # sentence rows here validated bursts on within-article intensity
+        # while articles were extracted at the article level — an internal
+        # inconsistency flagged by the July 2026 independent audit. An
+        # article is one publication decision: it is the natural unit of a
+        # coverage cascade. (daily_mapping keeps sentence rows for indices
+        # that need them.)
         daily_counts = pd.Series(
-            [len(daily_mapping.get(date, [])) for date in all_dates],
+            [len(articles_by_date.get(date, ())) for date in all_dates],
             index=all_dates
         )
         
-        # Daily proportions (normalized by total daily volume)
-        daily_totals_raw = data.groupby('date_converted').size()
+        # Daily proportions (normalized by total daily ARTICLE volume)
+        if 'doc_id' in data.columns:
+            daily_totals_raw = data.groupby('date_converted')['doc_id'].nunique()
+        else:
+            daily_totals_raw = data.groupby('date_converted').size()
         daily_totals = pd.Series(
             [int(daily_totals_raw.get(date, 0)) for date in all_dates],
             index=all_dates
@@ -174,7 +185,7 @@ class TemporalIndexer(AbstractIndexer):
 
         for date in all_dates:
             if date in daily_totals_raw.index and daily_totals_raw[date] > 0:
-                count = len(daily_mapping.get(date, []))
+                count = len(articles_by_date.get(date, ()))
                 daily_props[date] = count / daily_totals_raw[date]
             else:
                 daily_props[date] = 0.0

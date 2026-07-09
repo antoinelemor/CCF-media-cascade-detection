@@ -332,6 +332,23 @@ class EventOccurrenceDetector:
         # same-type clusters that only become near-identical after Phase 4.
         self._deduplicate_event_clusters(event_clusters)
 
+        # Step 7: FINAL coherence gate at the ARTICLE level.
+        #
+        # Phase 4b refines the occurrence partition, but occurrence CENTROIDS
+        # blur the article-level structure: a welded cluster of 20+ same-type
+        # occurrences can sit below the refinement threshold at the centroid
+        # level while its ARTICLES separate plainly (July 2026 blob: European
+        # heat-wave vs Canadian storm coverage, article-level complete-linkage
+        # silhouette 0.31 vs occurrence-level < 0.28). The event is ultimately
+        # an ARTICLE set — the final gate therefore tests, recursively, each
+        # cluster's article embeddings with the same calibrated criterion, and
+        # re-partitions occurrences (doc lists intersected per side) when a
+        # significant article-level split exists. Purely partitional: every
+        # article is kept.
+        event_clusters = self._article_coherence_gate(
+            event_clusters, entity_index, articles
+        )
+
         logger.info(
             f"Final: {len(occurrences)} event occurrences, "
             f"{len(event_clusters)} event clusters"
@@ -2326,6 +2343,93 @@ class EventOccurrenceDetector:
                 f"{n_before} -> {len(event_clusters)}"
             )
         return event_clusters
+
+    # --- Step 7: article-level coherence gate -------------------------------
+    ARTICLE_GATE_MIN_DOCS = 6   # below: assessment unreliable and stakes low
+
+    def _article_coherence_gate(self, event_clusters, entity_index, articles):
+        """Split any final cluster whose ARTICLE embeddings show a significant
+        sub-partition (same recursive complete-linkage silhouette criterion as
+        Phase 4b, threshold REFINE_MIN_SILHOUETTE). Article-count invariant."""
+        out = []
+        n_split = 0
+        for ec in event_clusters:
+            sides = self._split_cluster_by_articles(ec, entity_index, articles)
+            if len(sides) > 1:
+                n_split += 1
+            out.extend(sides)
+        for i, ec in enumerate(out):
+            ec.cluster_id = i
+        if n_split:
+            logger.info(
+                f"Step 7 (article gate): split {n_split} cluster(s) → "
+                f"{len(out)} final clusters"
+            )
+        return out
+
+    def _split_cluster_by_articles(self, ec, entity_index, articles):
+        """Returns [ec] (coherent) or the rebuilt sub-clusters."""
+        from dataclasses import replace as _dc_replace
+        doc_ids = sorted({d for occ in ec.occurrences for d in occ.doc_ids})
+        if len(doc_ids) < self.ARTICLE_GATE_MIN_DOCS or self.embedding_store is None:
+            return [ec]
+        X, found = self.embedding_store.get_batch_article_embeddings(
+            [str(d) for d in doc_ids])
+        if X is None or len(found) < self.ARTICLE_GATE_MIN_DOCS:
+            return [ec]
+        norms = np.linalg.norm(X, axis=1, keepdims=True)
+        Xn = X / np.maximum(norms, 1e-10)
+        D = squareform(pdist(Xn, metric='cosine'))
+        labels = self._refine_labels_recursive(D, np.ones(len(found), dtype=int))
+        uniq = sorted(set(labels.tolist()))
+        if len(uniq) < 2:
+            return [ec]
+        # côté de chaque doc trouvé ; les docs SANS embedding suivront la
+        # majorité de leur occurrence (aucun article perdu)
+        side_of = {}
+        for did, lab in zip(found, labels):
+            try:
+                side_of[int(did)] = int(lab)
+            except (TypeError, ValueError):
+                side_of[did] = int(lab)
+        sides_occs = {}
+        for occ in ec.occurrences:
+            votes = {}
+            for d in occ.doc_ids:
+                lab = side_of.get(int(d) if str(d).isdigit() else d)
+                if lab is not None:
+                    votes[lab] = votes.get(lab, 0) + 1
+            if not votes:
+                continue
+            majority = max(votes, key=votes.get)
+            for lab in uniq:
+                keep = [d for d in occ.doc_ids
+                        if side_of.get(int(d) if str(d).isdigit() else d,
+                                       majority) == lab]
+                if not keep:
+                    continue
+                seeds = [d for d in occ.seed_doc_ids
+                         if side_of.get(int(d) if str(d).isdigit() else d,
+                                        majority) == lab]
+                sides_occs.setdefault(lab, []).append(_dc_replace(
+                    occ, doc_ids=list(keep), seed_doc_ids=list(seeds),
+                    n_articles=len(keep)))
+        rebuilt = []
+        for lab in uniq:
+            occs = sides_occs.get(lab)
+            if not occs:
+                continue
+            rebuilt.append(self._build_event_cluster(
+                cluster_id=0, occurrences=occs, entity_index=entity_index,
+                articles=articles, embedding_store=self.embedding_store))
+        if len(rebuilt) < 2:
+            return [ec]
+        logger.info(
+            f"Article gate: cluster of {len(doc_ids)} docs split into "
+            f"{len(rebuilt)} coherent events "
+            f"({', '.join(str(sum(len(o.doc_ids) for o in sides_occs[l])) for l in uniq if l in sides_occs)} docs)"
+        )
+        return rebuilt
 
     # --- Step 4b helpers: recursive silhouette refinement -------------------
     # A cluster is split while a sub-partition with silhouette >
