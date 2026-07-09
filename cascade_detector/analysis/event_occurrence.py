@@ -2346,6 +2346,18 @@ class EventOccurrenceDetector:
 
     # --- Step 7: article-level coherence gate -------------------------------
     ARTICLE_GATE_MIN_DOCS = 6   # below: assessment unreliable and stakes low
+    # Diameter cutoff for the shard-regroup step (complete linkage on shard
+    # centroids, fcluster criterion='distance'). Calibrated on the July 2026
+    # production blob (64 docs, 15+ distinct stories): the recursive shatter
+    # is provably PURE but over-fine (near-duplicate pairs split off); a
+    # complete-linkage regroup bounds each story's centroid diameter, which
+    # chaining cannot defeat (a bridge shard can join one side, never weld
+    # two sides whose mutual distance exceeds the cutoff). Sweep t=0.10-0.20:
+    # 27→12 events, ALL pure (0 Europe+Canada mixtures); t=0.16 (intra-story
+    # centroid similarity >= 0.84) yields the editorially exact granularity
+    # (Manitoba floods / Prairie tornadoes / urban heat / Edmonton rain /
+    # French AC debate / European heat deaths / wildfire season...).
+    ARTICLE_GATE_MERGE_DIAMETER = 0.16
 
     def _article_coherence_gate(self, event_clusters, entity_index, articles):
         """Split any final cluster whose ARTICLE embeddings show a significant
@@ -2380,7 +2392,32 @@ class EventOccurrenceDetector:
         norms = np.linalg.norm(X, axis=1, keepdims=True)
         Xn = X / np.maximum(norms, 1e-10)
         D = squareform(pdist(Xn, metric='cosine'))
-        labels = self._refine_labels_recursive(D, np.ones(len(found), dtype=int))
+        # Step A — SHATTER: unconstrained recursive silhouette split. Provably
+        # pure (never welds distinct stories) but over-fine at the article
+        # level (near-duplicate wire copies split off as pairs).
+        shard_labels = self._refine_labels_recursive(
+            D, np.ones(len(found), dtype=int))
+        shard_ids = sorted(set(shard_labels.tolist()))
+        if len(shard_ids) < 2:
+            return [ec]
+        # Step B — REGROUP shards by centroid, complete linkage, DIAMETER
+        # cutoff: every pair of shards inside a story satisfies
+        # sim >= 1 - ARTICLE_GATE_MERGE_DIAMETER; bridges cannot chain two
+        # distant stories back together (complete linkage bounds the diameter).
+        cents = []
+        for sl in shard_ids:
+            m = Xn[shard_labels == sl].mean(axis=0)
+            cents.append(m / max(np.linalg.norm(m), 1e-10))
+        C = np.vstack(cents)
+        if len(shard_ids) == 2:
+            grp = np.array([1, 2]) if float(pdist(C, metric='cosine')[0])                 > self.ARTICLE_GATE_MERGE_DIAMETER else np.array([1, 1])
+        else:
+            Zc = linkage(pdist(C, metric='cosine'), method='complete')
+            grp = fcluster(Zc, t=self.ARTICLE_GATE_MERGE_DIAMETER,
+                           criterion='distance')
+        labels = np.empty(len(found), dtype=int)
+        for sl, g in zip(shard_ids, grp):
+            labels[shard_labels == sl] = int(g)
         uniq = sorted(set(labels.tolist()))
         if len(uniq) < 2:
             return [ec]
