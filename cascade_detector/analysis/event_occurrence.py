@@ -2345,7 +2345,11 @@ class EventOccurrenceDetector:
         return event_clusters
 
     # --- Step 7: article-level coherence gate -------------------------------
-    ARTICLE_GATE_MIN_DOCS = 6   # below: assessment unreliable and stakes low
+    ARTICLE_GATE_MIN_DOCS = 4   # qualitative reading (July 2026) found 2-story
+    # mixtures among 4-5-doc clusters (World-Cup heat + tornado prep; ocean
+    # monitoring + FIFA air miles); the Monte-Carlo threshold (0.28) stays
+    # above the n=4 spurious-silhouette p99 (0.225), so auditing small
+    # clusters is safe.
     # Diameter cutoff for the shard-regroup step (complete linkage on shard
     # centroids, fcluster criterion='distance'). Calibrated on the July 2026
     # production blob (64 docs, 15+ distinct stories): the recursive shatter
