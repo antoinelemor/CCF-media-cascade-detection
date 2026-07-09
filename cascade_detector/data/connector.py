@@ -65,11 +65,21 @@ class DatabaseConnector:
         self._initialize_engine()
     
     def _initialize_engine(self) -> None:
-        """Initialize SQLAlchemy engine."""
-        connection_string = (
-            f"postgresql://{self.config.db_user}:{self.config.db_password}"
-            f"@{self.config.db_host}:{self.config.db_port}/{self.config.db_name}"
-        )
+        """Initialize SQLAlchemy engine.
+
+        Supports Unix-socket hosts (db_host starting with '/'): SQLAlchemy
+        URLs cannot carry a socket path in the host position — it must be
+        passed as the ``host`` query parameter with an empty netloc."""
+        if str(self.config.db_host).startswith('/'):
+            connection_string = (
+                f"postgresql://{self.config.db_user}:{self.config.db_password}"
+                f"@/{self.config.db_name}?host={self.config.db_host}"
+            )
+        else:
+            connection_string = (
+                f"postgresql://{self.config.db_user}:{self.config.db_password}"
+                f"@{self.config.db_host}:{self.config.db_port}/{self.config.db_name}"
+            )
         
         try:
             self.engine = create_engine(
