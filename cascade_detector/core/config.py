@@ -63,7 +63,14 @@ class DetectorConfig:
     proptest_min_baseline_total: int = 200   # min articles in local baseline, else fallback
     proptest_fdr_alpha: float = 0.05         # Benjamini-Hochberg across final windows (per frame)
     proptest_min_cohen_h: float = 0.05   # minimum effect size (Cohen's h)
-    proptest_min_ratio: float = 1.5      # minimum proportion ratio above baseline
+    # Minimum proportion ratio above the local baseline. Default 1.2 = the
+    # GRADED definition (user decision, July 2026): every statistically
+    # validated elevation (p, Cohen's h, FDR still enforced) is admitted and
+    # the 4-dimension score classifies weak/moderate/strong — the observatory
+    # serves them all. The STRICT definition (1.5, unambiguous bursts) is the
+    # paper's robustness configuration: CCF_PROPTEST_MIN_RATIO=1.5.
+    proptest_min_ratio: float = field(
+        default_factory=lambda: float(os.getenv('CCF_PROPTEST_MIN_RATIO', '1.2')))
     min_burst_days: int = 3
     baseline_window_days: int = 90
     burst_merge_gap_days: int = 1        # merge gap (days); PELT produces tight segments

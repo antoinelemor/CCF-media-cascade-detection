@@ -55,7 +55,9 @@ from cascade_detector.pipeline import CascadeDetectionPipeline
 
 logger = logging.getLogger(__name__)
 
-RESULTS_DIR = PROJECT_ROOT / 'results' / 'production'
+# Overridable so the graded (default) and strict (paper-robustness) sweeps
+# can coexist: CCF_RESULTS_SUBDIR=production_strict for the 1.5-floor run.
+RESULTS_DIR = PROJECT_ROOT / 'results' / os.getenv('CCF_RESULTS_SUBDIR', 'production')
 
 
 # =============================================================================
