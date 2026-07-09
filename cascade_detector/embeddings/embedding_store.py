@@ -146,6 +146,21 @@ class EmbeddingStore:
         """Number of embeddings stored."""
         return len(self.index)
 
+    @staticmethod
+    def _canonical_doc_id(doc_id):
+        """Canonical integer form of a doc_id.
+
+        doc_ids flow through pandas where integer columns silently upcast to
+        float64 (any NaN in the frame does it); callers that stringify then
+        produce '12345.0', which matches neither the int key nor its str
+        alias — silently degrading embedding coverage (observed July 2026:
+        35% coverage on 1000-doc batches, weakening every semantic signal).
+        int(float(x)) canonicalises every observed form."""
+        try:
+            return int(float(doc_id))
+        except (TypeError, ValueError):
+            return doc_id
+
     def get_sentence_embedding(self, doc_id: str, sentence_id: int) -> Optional[np.ndarray]:
         """
         Get embedding for a specific sentence.
@@ -175,6 +190,8 @@ class EmbeddingStore:
         """
         row_indices = self.doc_id_to_rows.get(doc_id)
         if not row_indices:
+            row_indices = self.doc_id_to_rows.get(self._canonical_doc_id(doc_id))
+        if not row_indices:
             return None
 
         # Gather sentence embeddings and mean pool
@@ -194,10 +211,13 @@ class EmbeddingStore:
         Returns:
             Tuple of (embeddings array [n_found, dim], list of found doc_ids)
         """
-        # Filter to doc_ids that exist in the index
+        # Filter to doc_ids that exist in the index (canonical int form —
+        # tolerant to pandas float64 upcasts and stringified floats)
         valid = []
         for doc_id in doc_ids:
             rows = self.doc_id_to_rows.get(doc_id)
+            if not rows:
+                rows = self.doc_id_to_rows.get(self._canonical_doc_id(doc_id))
             if rows:
                 valid.append((doc_id, rows))
 
