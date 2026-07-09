@@ -279,12 +279,25 @@ class UnifiedCascadeDetector:
         all_periods = self._extend_boundaries(all_periods, prop_series, baseline_prop)
         all_periods = self._merge_periods(all_periods)
 
-        # Re-annotate after final merge
+        # Re-VALIDATE after final merge: boundary extension and re-merge can
+        # stretch a window well beyond its core burst, diluting the effect.
+        # With window-level n in the hundreds, a diluted +10% elevation still
+        # yields p < 0.05 — so keeping only the p-value here (and discarding
+        # the conjunctive acceptance) let regime drifts through (observed
+        # July 2026: Cult windows of 53 days whose weekly ratios never
+        # exceeded 1.34 were served). Every SERVED window must satisfy the
+        # full conjunction (p, effect size h, ratio) on its FINAL extent.
         final = []
         for period in all_periods:
-            _, stats = self._proptest_accept(
+            accepted, stats = self._proptest_accept(
                 count_series, total_series, period['start'], period['end'], baseline_prop
             )
+            if not accepted:
+                logger.info(
+                    f"  Dropped extended window {period['start']}–{period['end']}"
+                    f" (fails conjunctive re-validation on final extent)"
+                )
+                continue
             final.append({**period, **stats})
 
         # Benjamini-Hochberg across the frame's final windows: the pipeline
