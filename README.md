@@ -129,9 +129,22 @@ The convergence signal is **orthogonalized** with respect to the temporal signal
 
 These are combined into a **weighted composite signal** (weights: 0.25, 0.20, 0.20, 0.15, 0.20) used for burst detection via dual methods: Z-score flagging (≥2σ for ≥3 consecutive days) and CUSUM change-point detection (Page, 1954).
 
+### Step 3 — Statistical validation of burst windows (v2)
+
+Candidate windows (PELT segments, refinements, multi-scale sliding windows) must pass a **conjunctive article-level proportion test** before scoring:
+
+- **Local trailing baseline**: the expected frame proportion is the trailing 90-day article-level proportion ending 8 days before the window onset (7-day guard + 1), never the whole-period mean — a rising regime is its own baseline, so slow drifts cannot masquerade as bursts. Windows whose local history is too thin (< 200 baseline articles) fall back to the period mean.
+- **Conjunctive acceptance**: a window is accepted only if `p < 0.01` (one-sided binomial) **and** Cohen's `h > 0.05` **and** `observed/expected ≥ 1.5`. Significance alone is insufficient — with hundreds of articles per window, a diluted +10% elevation clears any α.
+- **BH-FDR across windows**: within each frame, Benjamini-Hochberg (α = 0.05) controls the false-discovery rate across all tested windows.
+- **Final-extent re-validation**: boundary extension and re-merge can stretch a window beyond its core burst; every window is re-tested on its **final** extent and dropped if the conjunction no longer holds.
+
+Counts are **unique articles per day** (not sentence rows), so multi-sentence articles cannot inflate bursts.
+
+**Baseline preload**: production runs load ~100 days of data before the analysis period (`target_start_date`) so the local baseline exists from day one; detections inside the preload are trimmed.
+
 ### Step 3 — Scoring: four dimensions, 17 sub-indices
 
-Every detected burst is scored on a continuous [0, 1] scale across four equally-weighted dimensions. There is no binary validation gate — the score determines the classification.
+Every **validated** burst (see statistical validation above) is scored on a continuous [0, 1] scale across four equally-weighted dimensions. The conjunctive statistical gate decides *admission*; the score determines the *classification*.
 
 | Dimension | Weight | Sub-indices | Key metrics |
 |-----------|--------|-------------|-------------|
@@ -171,7 +184,9 @@ The `EventOccurrenceDetector` (`analysis/event_occurrence.py`) detects real-worl
 | **Phase 2** | Per-type clustering | HAC on title+sentence embeddings (30/70 weight), 3D distance (semantic + temporal + entity) |
 | **Phase 3** | Multi-type merge | Pool all occurrences, deduplicate (Jaccard > 0.5), HAC with silhouette-optimized k |
 | **Phase 4** | Soft assignment | 4D distance (temporal + semantic + entity + signal), 2 iterations, self-adjusting threshold |
+| **Phase 4b** | Recursive silhouette refinement | Complete-linkage re-partition of merged clusters; split accepted while silhouette > 0.28 (Monte-Carlo calibrated: spurious-split p99 = 0.225 vs true-mixture p5 = 0.339), parsimony rule keeps the smallest k within 0.02 of the best |
 | **Phase 5** | Confidence scoring | 5 components: centroid tightness, coherence residual, media diversity, recruitment success, size adequacy |
+| **Step 7** | Article-level coherence gate | For every cluster ≥ 4 docs: (A) **shatter** — unconstrained recursive silhouette split on article-embedding cosine distances (provably pure, over-fine); (B) **regroup** — complete linkage on shard centroids with a 0.16 diameter cutoff (intra-story centroid similarity ≥ 0.84), which bridges cannot chain across. Occurrences are copied per side with intersected doc lists — no article is lost |
 | **Attribution** | Cascade linkage | Temporal overlap + shared articles → `CascadeAttribution` objects |
 
 **Key data structures**:
