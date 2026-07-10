@@ -327,7 +327,11 @@ class ParadigmStateComputer:
         self.window_size = window_size
         self.step_days = max(1, step_days)
         self.frame_names = frame_names or list(FRAMES)
-        self.n_workers = n_workers if n_workers is not None else os.cpu_count()
+        # CCF_PARADIGM_WORKERS : plafond machine partagée (le web, l'essaim et
+        # la détection cohabitent — 24 workers saturaient la box, loadavg 82+).
+        _env_cap = os.getenv('CCF_PARADIGM_WORKERS')
+        _default = int(_env_cap) if _env_cap else os.cpu_count()
+        self.n_workers = n_workers if n_workers is not None else _default
 
     def compute_states(self, weekly_props: pd.DataFrame) -> List[ParadigmState]:
         """Compute paradigm states from weekly proportions.
