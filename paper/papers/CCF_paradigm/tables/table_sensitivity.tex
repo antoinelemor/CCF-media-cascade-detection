@@ -1,0 +1,29 @@
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.15}
+\caption{\textbf{Robustness of the cascade set to the admission threshold.}
+Top: share of the production set (burst admission at $1.2\times$ the local
+baseline) that survives stricter floors on the \emph{final} elevation ratio
+(peak proportion / local baseline; median 2.91). Bottom: recovery of an
+independent strict re-run of the full pipeline (admission $1.5\times$)
+within the production set (same frame, peak within $\pm 3$ days). The
+admission threshold gates candidate windows \emph{before} clustering and
+scoring, so the pipeline is not strictly monotone in this parameter;
+recovery below 100\% reflects this non-monotonicity, not disagreement on
+cascade strength.}
+\label{tab:si_sensitivity}
+\vspace{0.3em}
+\small
+\begin{tabular}{@{}l r r@{}}
+\toprule
+Criterion & $n$ & \% of set \\
+\midrule
+Production set (admission $\geq 1.2$) & 609 & 100 \\
+Final elevation $\geq 1.35$ & 595 & 98 \\
+Final elevation $\geq 1.50$ & 548 & 90 \\
+\midrule
+Independent strict re-run (admission $\geq 1.5$) & 291 & \\
+\quad recovered in production set ($\pm 3$ d, same frame) & 218 & 75 \\
+\bottomrule
+\end{tabular}
+\end{table}
